@@ -3,11 +3,15 @@
 #include "scenedata.h"
 #include <vector>
 #include <string>
+#include <GL/glew.h>
 
 // Struct which contains data for a single primitive, to be used for rendering
 struct RenderShapeData {
     ScenePrimitive primitive;
     glm::mat4 ctm; // the cumulative transformation matrix
+    glm::mat3 ictm;
+    GLuint vbo;
+    GLuint vao;
 };
 
 // Struct which contains all the data needed to render a scene
