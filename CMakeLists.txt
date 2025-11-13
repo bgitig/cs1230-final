@@ -44,6 +44,9 @@ add_executable(${PROJECT_NAME}
     src/utils/camera.h src/utils/camera.cpp
     src/utils/shape.h src/utils/shape.cpp
     src/utils/sphere.h src/utils/sphere.cpp
+    src/utils/cube.h src/utils/cube.cpp
+    src/utils/cone.h src/utils/cone.cpp
+    src/utils/cylinder.h src/utils/cylinder.cpp
 )
 
 # GLM: this creates its library and allows you to `#include "glm/..."`

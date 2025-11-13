@@ -43,9 +43,7 @@ void Sphere::makeWedge(float currentTheta, float nextTheta) {
     // Task 6: create a single wedge of the sphere using the
     //         makeTile() function you implemented in Task 5
     // Note: think about how param 1 comes into play here!
-    std::cout<<"make wedge1"<<std::endl;
-
-    int p1 = std::max(1, m_param1);
+    int p1 = std::max(2, m_param1);
 
     float phiStep = glm::radians(180.f / p1);
     for (int i = 0; i< p1; i++) {
@@ -67,25 +65,16 @@ void Sphere::makeWedge(float currentTheta, float nextTheta) {
 
         makeTile(tl, tr, bl, br);
     }
-    std::cout<<"make wedge2"<<std::endl;
-
 }
 
 void Sphere::makeSphere() {
-    std::cout<<"makespehre1"<<std::endl;
-
     int p2 = std::max(3, m_param2);
     float thetaStep = glm::radians(360.f / p2);
     for (int i = 0; i < p2; i++) {
         makeWedge(thetaStep*i, thetaStep*(i+1));
     }
-    std::cout<<"makespehre2"<<std::endl;
-
 }
 
 void Sphere::setVertexData() {
-    std::cout<<"setting v data1"<<std::endl;
     makeSphere();
-    std::cout<<"setting v data2"<<std::endl;
-
 }

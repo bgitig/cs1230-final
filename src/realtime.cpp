@@ -7,6 +7,7 @@
 #include "settings.h"
 #include "glm/gtc/matrix_transform.hpp"
 
+
 // ================== Rendering the Scene!
 
 Realtime::Realtime(QWidget *parent)
@@ -26,44 +27,54 @@ Realtime::Realtime(QWidget *parent)
     // If you must use this function, do not edit anything above this
 }
 
-Mesh Realtime::createMesh(const std::vector<GLfloat> &shapeData) {
-    Mesh mesh;
-    glGenBuffers(1, &vbo);
+void Realtime::bindData(std::vector<float> &shapeData, GLuint &vbo) {
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
-
     glBufferData(GL_ARRAY_BUFFER, shapeData.size() * sizeof(GLfloat), shapeData.data(), GL_STATIC_DRAW);
-
-    glGenVertexArrays(1, &vao);
-    glBindVertexArray(vao);
-
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 6, (void*)0);
-
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 6, (void*)(sizeof(GLfloat)*3));
-
-    glBindVertexArray(0);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-    mesh.vertexCount = shapeData.size() / 6;
-    return mesh;
 }
 
-Shape* makeShape(PrimitiveType type, int param1, int param2) {
-    switch (type) {
-    // case PrimitiveType::PRIMITIVE_CONE:
-    //     return new Cone(param1, param2);
-    // case PrimitiveType::PRIMITIVE_CUBE:
-    //     return new Cube(param1, param2);
-    // case PrimitiveType::PRIMITIVE_CYLINDER:
-    //     return new Cylinder(param1, param2);
-    case PrimitiveType::PRIMITIVE_SPHERE:
-        std::cout<<"making sphere"<<std::endl;
-        return new Sphere(param1, param2);
-        break;
-    default:
-        return nullptr;
-    }
+void Realtime::setUpBindings(std::vector<float> &shapeData, GLuint &vbo, GLuint &vao) {
+        glGenBuffers(1, &vbo);
+        bindData(shapeData, vbo);
+
+        glGenVertexArrays(1, &vao);
+        glBindVertexArray(vao);
+
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 6, reinterpret_cast<void *>(0));
+
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 6, reinterpret_cast<void *>(sizeof(GLfloat)*3));
+
+        glBindVertexArray(0);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
+void Realtime::makeShapes() {
+    m_sphere_data = Sphere(settings.shapeParameter1,settings.shapeParameter2).getVertexData();
+    m_cone_data = Cone(settings.shapeParameter1,settings.shapeParameter2).getVertexData();
+    m_cube_data = Cube(settings.shapeParameter1,settings.shapeParameter2).getVertexData();
+    m_cylinder_data = Cylinder(settings.shapeParameter1,settings.shapeParameter2).getVertexData();
+}
+
+void Realtime::updateShapes() {
+    makeShapes();
+    bindData(m_sphere_data, m_sphere_vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    bindData(m_cone_data, m_cone_vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    bindData(m_cube_data, m_cube_vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    bindData(m_cylinder_data, m_cylinder_vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
+void Realtime::setUp() {
+    makeShapes();
+    setUpBindings(m_sphere_data, m_sphere_vbo, m_sphere_vao);
+    setUpBindings(m_cone_data, m_cone_vbo, m_cone_vao);
+    setUpBindings(m_cube_data, m_cube_vbo, m_cube_vao);
+    setUpBindings(m_cylinder_data, m_cylinder_vbo, m_cylinder_vao);
+    isSetUp = true;
 }
 
 void Realtime::finish() {
@@ -71,10 +82,15 @@ void Realtime::finish() {
     this->makeCurrent();
 
     // Students: anything requiring OpenGL calls when the program exits should be done here
-    for (Mesh mesh : m_meshes) {
-        glDeleteBuffers(1, &vbo);
-        glDeleteVertexArrays(1, &vao);
-    }
+    glDeleteBuffers(1, &m_sphere_vbo);
+    glDeleteVertexArrays(1, &m_sphere_vao);
+    glDeleteBuffers(1, &m_cone_vbo);
+    glDeleteVertexArrays(1, &m_cone_vao);
+    glDeleteBuffers(1, &m_cube_vbo);
+    glDeleteVertexArrays(1, &m_cube_vao);
+    glDeleteBuffers(1, &m_cylinder_vbo);
+    glDeleteVertexArrays(1, &m_cylinder_vao);
+
     glDeleteProgram(m_shader);
 
     this->doneCurrent();
@@ -105,7 +121,37 @@ void Realtime::initializeGL() {
     // Students: anything requiring OpenGL calls when the program starts should be done here
     glClearColor(0,0,0,1);
     m_shader = ShaderLoader::createShaderProgram(":/resources/shaders/default.vert", ":/resources/shaders/default.frag");
+    setUp();
+}
 
+GLuint Realtime::typeInterpretVao(PrimitiveType type) {
+    switch (type) {
+    case PrimitiveType::PRIMITIVE_CONE:
+        return m_cone_vao;
+    case PrimitiveType::PRIMITIVE_CUBE:
+        return m_cube_vao;
+    case PrimitiveType::PRIMITIVE_CYLINDER:
+        return m_cylinder_vao;
+    case PrimitiveType::PRIMITIVE_SPHERE:
+        return m_sphere_vao;
+    default:
+        return 0;
+    }
+}
+
+GLsizei Realtime::typeInterpretVertices(PrimitiveType type) {
+    switch (type) {
+    case PrimitiveType::PRIMITIVE_CONE:
+        return m_cone_data.size()/6;
+    case PrimitiveType::PRIMITIVE_CUBE:
+        return m_cube_data.size()/6;
+    case PrimitiveType::PRIMITIVE_CYLINDER:
+        return m_cylinder_data.size()/6;
+    case PrimitiveType::PRIMITIVE_SPHERE:
+        return m_sphere_data.size()/6;
+    default:
+        return 0;
+    }
 }
 
 void Realtime::paintGL() {
@@ -113,27 +159,53 @@ void Realtime::paintGL() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glUseProgram(m_shader);
 
-    for (Mesh &mesh : m_meshes) {
-        glBindVertexArray(vao);
+    for (RenderShapeData shape : renderData.shapes) {
+        glBindVertexArray(typeInterpretVao(shape.primitive.type));
 
-        m_mvp = m_proj * m_view * mesh.shape.ctm;
+        m_mvp = m_proj * m_view * shape.ctm;
         GLint mvpLoc = glGetUniformLocation(m_shader, "m_mvp");
         glUniformMatrix4fv(mvpLoc, 1, GL_FALSE, &m_mvp[0][0]);
 
-        m_model = mesh.shape.ctm;
+        m_model = shape.ctm;
         GLint model_location = glGetUniformLocation(m_shader, "m_model");
         glUniformMatrix4fv(model_location, 1, GL_FALSE, &m_model[0][0]);
 
-        // GLint ictmLoc = glGetUniformLocation(m_shader, "ictm");
-        // glUniformMatrix3fv(ictmLoc, 1, GL_FALSE, &mesh.shape.ictm[0][0]);
-        // GLint view_location = glGetUniformLocation(m_shader, "m_view");
-        // glUniformMatrix4fv(view_location, 1, GL_FALSE, &m_view[0][0]);
-        // GLint proj_location = glGetUniformLocation(m_shader, "m_proj");
-        // glUniformMatrix4fv(proj_location, 1, GL_FALSE, &m_proj[0][0]);
+        ictm = shape.ictm;
+        GLint ictmLoc = glGetUniformLocation(m_shader, "ictm");
+        glUniformMatrix3fv(ictmLoc, 1, GL_FALSE, &ictm[0][0]);
 
-        glDrawArrays(GL_TRIANGLES, 0, mesh.vertexCount);
+        GLint cameraPosLoc = glGetUniformLocation(m_shader, "camera_pos");
+        glUniform4fv(cameraPosLoc, 1, &camPos[0]);
+
+        GLint ka_location = glGetUniformLocation(m_shader, "m_ka");
+        glUniform1f(ka_location, m_ka);
+        GLint kd_location = glGetUniformLocation(m_shader, "m_kd");
+        glUniform1f(kd_location, m_kd);
+        GLint ks_location = glGetUniformLocation(m_shader, "m_ks");
+        glUniform1f(ks_location, m_ks);
+
+        // m_lightPos = inverse(m_model) * m_lightPos;
+        // GLint light_location = glGetUniformLocation(m_shader, "m_lightPos");
+        // glUniform4fv(light_location, 1, &m_lightPos[0]);
+
+
+        SceneMaterial material = shape.primitive.material;
+        GLint cAmbient_location = glGetUniformLocation(m_shader, "m_cAmbient");
+        glUniform4f(cAmbient_location, material.cAmbient.x, material.cAmbient.y, material.cAmbient.z, material.cAmbient.w);
+        GLint cDiffuse_location = glGetUniformLocation(m_shader, "m_cDiffuse");
+        glUniform4f(cDiffuse_location, material.cDiffuse.x, material.cDiffuse.y, material.cDiffuse.z, material.cDiffuse.w);
+        GLint cSpecular_location = glGetUniformLocation(m_shader, "m_cSpecular");
+        glUniform4f(cSpecular_location, material.cSpecular.x, material.cSpecular.y, material.cSpecular.z, material.cSpecular.w);
+        GLint shininess_location = glGetUniformLocation(m_shader, "m_shininess");
+        glUniform1f(shininess_location, material.shininess);
+        GLint cReflectivelocation = glGetUniformLocation(m_shader, "m_cReflective");
+        glUniform4f(cReflectivelocation, material.cReflective.x, material.cReflective.y, material.cReflective.z, material.cReflective.w);
+
+
+        glDrawArrays(GL_TRIANGLES, 0, typeInterpretVertices(shape.primitive.type));
         glBindVertexArray(0);
     }
+
     glUseProgram(0);
 }
 
@@ -144,62 +216,87 @@ void Realtime::resizeGL(int w, int h) {
     // Students: anything requiring OpenGL calls when the program starts should be done here
 }
 
+void Realtime::updateCamera() {
+    m_view = camera.calculateViewMatrix(camLook, camUp, camPos);
+    m_proj = camera.calculateProjectionMatrix(settings.nearPlane, settings.farPlane);
+    // camPos = glm::inverse(m_view)*glm::vec4(0,0,0,1);
+}
+
+void Realtime::updateLights() {
+    glUseProgram(m_shader);
+    std::vector<SceneLightData> lights = renderData.lights;
+    for (int i = 0; i < lights.size(); i++) {
+        std::cout<<"updating lights"<<std::endl;
+        GLint wloc = glGetUniformLocation(m_shader, "white");
+        glUniform1f(wloc, 1.0f);
+
+        SceneLightData light = lights[i];
+
+        LightType type = light.type;
+        int typeInt = type == LightType::LIGHT_POINT ? 0 : (type == LightType::LIGHT_DIRECTIONAL ? 1 : 2);
+        GLint lightTypeLoc = glGetUniformLocation(m_shader, ("m_lightType["+std::to_string(i)+"]").c_str());
+        glUniform1i(lightTypeLoc, typeInt);
+
+        GLint lightColorLoc = glGetUniformLocation(m_shader, ("m_lightColor["+std::to_string(i)+"]").c_str());
+        glm::vec4 lightColor = light.color;
+        glUniform4f(lightColorLoc, lightColor.x, lightColor.y, lightColor.z, lightColor.w);
+
+        GLint lightFunctionLoc = glGetUniformLocation(m_shader, ("m_lightFunction["+std::to_string(i)+"]").c_str());
+        glm::vec3 lightFunction= light.function;
+        glUniform3f(lightFunctionLoc, lightFunction.x, lightFunction.y, lightFunction.z);
+
+        // might need to multiply light pos by inverse ctm
+        GLint lightPosLoc = glGetUniformLocation(m_shader, ("m_lightPos["+std::to_string(i)+"]").c_str());
+        glm::vec4 lightPos = light.pos;
+        glUniform4f(lightPosLoc, lightPos.x, lightPos.y, lightPos.z, lightPos.w);
+
+        GLint lightDirLoc = glGetUniformLocation(m_shader, ("m_lightDir["+std::to_string(i)+"]").c_str());
+        glm::vec4 lightDir = light.dir;
+        glUniform4f(lightDirLoc, lightDir.x, lightDir.y, lightDir.z, lightDir.w);
+
+        GLint lightPenumbraLoc = glGetUniformLocation(m_shader, ("m_lightPenumbra["+std::to_string(i)+"]").c_str());
+        glUniform1f(lightPenumbraLoc, light.penumbra);
+
+        GLint lightAngleLoc = glGetUniformLocation(m_shader, ("m_lightAngle["+std::to_string(i)+"]").c_str());
+        glUniform1f(lightAngleLoc, light.angle);
+
+        // glm::vec3 directionToLight = light.type == LightType::LIGHT_DIRECTIONAL ? glm::vec3(glm::normalize(-light.dir)) : glm::normalize(glm::vec3(light.pos)-position);
+        // GLint lightAngleLoc = glGetUniformLocation(m_shader, "m_lightAngle["+std::to_string(i)+"]");
+        // glUniform1f(lightAngleLoc, lights[i].angle);
+    }
+    glUseProgram(0);
+}
+
 void Realtime::sceneChanged() {
     bool success = SceneParser::parse(settings.sceneFilePath, renderData);
     if (!success) return;
 
-    for (Mesh &mesh : m_meshes) {
-        glDeleteBuffers(1, &vbo);
-        glDeleteVertexArrays(1, &vao);
-    }
-    m_meshes.clear();
-
-    for (RenderShapeData shape : renderData.shapes) {
-        Shape* shapeData = makeShape(shape.primitive.type, settings.shapeParameter1, settings.shapeParameter2);
-        std::vector<float> shapeVertexData = shapeData->getVertexData();
-        for (int i = 0; i < 10; i++) {
-            std::cout<<"shapedata at "<<i<<"is: "<<shapeVertexData[i]<<std::endl;
-        }
-        Mesh mesh = createMesh(shapeVertexData);
-        mesh.shape = shape;
-        m_meshes.push_back(mesh);
-    }
-
-    // for (SceneLightData light : renderData.lights) {
-    // for (int i = 0; i < renderData.lights.size(); i++) {
-    //     GLint lightPosLoc = glGetUniformLocation(m_shader, "m_lightPosArray["+std::to_string(i)+"]");
-    //     glm::vec4 lightPos = renderData.lights[i].pos;
-    //     glUniform4f(lightPosLoc, lightPos.x, lightPos.y, lightPos.z, lightPos.w);
-
-    //     GLint lightDirLoc = glGetUniformLocation(m_shader, "m_lightDirArray["+std::to_string(i)+"]");
-    //     glm::vec4 lightDir = renderData.lights[i].dir;
-    //     gluniform4f(lightDirLoc, lightDir.x, lightDir.y, lightDir.z, lightDir.w);
-
-    //     renderData.lights[i];
-    // }
-
     SceneCameraData camData = renderData.cameraData;
-
     camera.cameraSetUp(camData, size().width(), size().height());
     camLook = glm::vec3(camData.look);
     camUp = glm::vec3(camData.up);
     camPos = camData.pos;
+    updateCamera();
+    updateLights();
 
-    m_view = camera.calculateViewMatrix(camLook, camUp, camPos);
-    m_proj = camera.calculateProjectionMatrix(settings.nearPlane, settings.farPlane);
+    // for (SceneLightData light : renderData.lights) {
+
 
     update(); // asks for a PaintGL() call to occur
 }
 
 void Realtime::settingsChanged() {
+    if (isSetUp) updateShapes();
+
     // for (Mesh &mesh : m_meshes) {
     //     std::vector<float> newData = makeShape(mesh.shape.primitive.type, settings.shapeParameter1, settings.shapeParameter2)->getVertexData();
     //     glBindBuffer(GL_ARRAY_BUFFER, mesh.vbo);
     //     glBufferData(GL_ARRAY_BUFFER, newData.size() * sizeof(GLfloat), newData.data(), GL_STATIC_DRAW);
     //     mesh.vertexCount = newData.size() / 6;
     // }
-    m_view = camera.calculateViewMatrix(camLook, camUp, camPos);
-    m_proj = camera.calculateProjectionMatrix(settings.nearPlane, settings.farPlane);
+    std::cout<<"settings changed"<<std::endl;
+    // m_view = camera.calculateViewMatrix(camLook, camUp, camPos);
+    // m_proj = camera.calculateProjectionMatrix(settings.nearPlane, settings.farPlane);
 
     update(); // asks for a PaintGL() call to occur
 }
@@ -240,37 +337,38 @@ glm::mat3 rotMat(glm::vec3 &u, float angle) {
 }
 
 void Realtime::mouseMoveEvent(QMouseEvent *event) {
-    // if (m_mouseDown) {
-    //     int posX = event->position().x();
-    //     int posY = event->position().y();
-    //     int deltaX = posX - m_prev_mouse_pos.x;
-    //     int deltaY = posY - m_prev_mouse_pos.y;
-    //     m_prev_mouse_pos = glm::vec2(posX, posY);
+    if (m_mouseDown) {
+        int posX = event->position().x();
+        int posY = event->position().y();
+        int deltaX = posX - m_prev_mouse_pos.x;
+        int deltaY = posY - m_prev_mouse_pos.y;
+        m_prev_mouse_pos = glm::vec2(posX, posY);
 
-    //     // Use deltaX and deltaY here to rotate
-    //     float xAngle = deltaX * .005f;
-    //     float yAngle = deltaY * .005f;
+        // Use deltaX and deltaY here to rotate
+        float xAngle = deltaX * .005f;
+        float yAngle = deltaY * .005f;
 
-    //     // mouse x: rotate about (0,1,0)
-    //     glm::vec3 xAxis(0.0f, 1.0f, 0.0f);
-    //     glm::mat3 xRot = rotMat(xAxis, xAngle);
-    //     camLook = glm::normalize(xRot*camLook);
-    //     camUp = glm::normalize(camUp*xRot);
+        // mouse x: rotate about (0,1,0)
+        glm::vec3 xAxis(0.0f, 1.0f, 0.0f);
+        glm::mat3 xRot = rotMat(xAxis, xAngle);
+        camLook = glm::normalize(xRot*camLook);
+        camUp = glm::normalize(camUp*xRot);
 
-    //     // mouse y: rotate about axis defined by vector perpindicular to look and up
-    //     glm::vec3 yAxis = glm::normalize(glm::cross(camLook, camUp));
-    //     glm::mat3 yRot = rotMat(yAxis, yAngle);
-    //     camLook = glm::normalize(yRot*camLook);
-    //     camUp = glm::normalize(yRot*camUp);
+        // mouse y: rotate about axis defined by vector perpindicular to look and up
+        glm::vec3 yAxis = glm::normalize(glm::cross(camLook, camUp));
+        glm::mat3 yRot = rotMat(yAxis, yAngle);
+        camLook = glm::normalize(yRot*camLook);
+        camUp = glm::normalize(yRot*camUp);
 
         // // Optionally clamp vertical rotation to prevent flipping
         // if (glm::abs(glm::dot(newFront, worldUp)) < 0.99f) {
         //     m_cameraFront = newFront;
         //     m_cameraUp = newUp;
         // }
+        updateCamera();
 \
         update(); // asks for a PaintGL() call to occur
-    // }
+    }
 }
 
 void Realtime::timerEvent(QTimerEvent *event) {
@@ -282,14 +380,15 @@ void Realtime::timerEvent(QTimerEvent *event) {
     float velocity = 5.0f * deltaTime;
     glm::vec3 right = glm::normalize(glm::cross(camLook, camUp));
 
-    // if (m_keyMap[Qt::Key_W]) camPos += glm::vec4(camLook * velocity, 0.0f);
-    // if (m_keyMap[Qt::Key_A]) camPos -= glm::vec4(right * velocity, 0.0f);
-    // if (m_keyMap[Qt::Key_S]) camPos -= glm::vec4(camLook * velocity, 0.0f);
-    // if (m_keyMap[Qt::Key_D]) camPos += glm::vec4(right * velocity, 0.0f);
+    if (m_keyMap[Qt::Key_W]) camPos -= glm::vec4(camLook * velocity, 0.0f);
+    if (m_keyMap[Qt::Key_A]) camPos += glm::vec4(right * velocity, 0.0f);
+    if (m_keyMap[Qt::Key_S]) camPos += glm::vec4(camLook * velocity, 0.0f);
+    if (m_keyMap[Qt::Key_D]) camPos -= glm::vec4(right * velocity, 0.0f);
 
     // // // change to be along (0,1 or -1,0)
-    // if (m_keyMap[Qt::Key_Control]) camPos -= glm::vec4(0.0f, 1.0f, 0.0f, 0.0f) * velocity;
-    // if (m_keyMap[Qt::Key_Space]) camPos += glm::vec4(0.0f, 1.0f, 0.0f, 0.0f) * velocity;
+    if (m_keyMap[Qt::Key_Control]) camPos += glm::vec4(0.0f, 1.0f, 0.0f, 0.0f) * velocity;
+    if (m_keyMap[Qt::Key_Space]) camPos -= glm::vec4(0.0f, 1.0f, 0.0f, 0.0f) * velocity;
+    updateCamera();
 
     update(); // asks for a PaintGL() call to occur
 }

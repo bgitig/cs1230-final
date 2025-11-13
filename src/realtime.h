@@ -19,16 +19,9 @@
 #include "utils/shaderloader.h"
 #include "utils/shape.h"
 #include "utils/sphere.h"
-// #include "utils/cube.h"
-// #include "utils/cone.h"
-// #include "utils/cylinder.h"
-
-struct Mesh {
-    GLuint vbo;
-    GLuint vao;
-    int vertexCount;
-    RenderShapeData shape;
-};
+#include "utils/cube.h"
+#include "utils/cone.h"
+#include "utils/cylinder.h"
 
 class Realtime : public QOpenGLWidget
 {
@@ -56,8 +49,16 @@ private:
     void mouseReleaseEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void timerEvent(QTimerEvent *event) override;
-    Mesh createMesh(const std::vector<GLfloat> &shapeData);
 
+    void bindData(std::vector<float> &shapeData, GLuint &vbo);
+    void setUpBindings(std::vector<float> &shapeData, GLuint &vbo, GLuint &vao);
+    void makeShapes();
+    void updateShapes();
+    void setUp();
+    GLuint typeInterpretVao(PrimitiveType type);
+    GLsizei typeInterpretVertices(PrimitiveType type);
+    void updateCamera();
+    void updateLights();
 
     // Tick Related Variables
     int m_timer;                                        // Stores timer which attempts to run ~60 times per second
@@ -71,24 +72,40 @@ private:
     // Device Correction Variables
     double m_devicePixelRatio;
 
+    GLuint m_shader;
+
+    // camera data
     RenderData renderData;
     Camera camera;
+    glm::vec4 camera_pos;
     glm::vec3 camLook = glm::vec3(1.0f);
     glm::vec3 camUp = glm::vec3(1.0f);
     glm::vec4 camPos = glm::vec4(1.0f);
 
-    GLuint m_shader;
-    std::vector<Mesh> m_meshes;
 
     // from lab 10
     glm::mat4 m_model = glm::mat4(1.0f);
     glm::mat4 m_view  = glm::mat4(1.0f);
     glm::mat4 m_proj  = glm::mat4(1.0f);
     glm::mat4 m_mvp = glm::mat4(1.0f);
+    glm::mat3 ictm = glm::mat3(1.0f);
 
-    GLuint vbo;
-    GLuint vao;
+    // shape data
+    bool isSetUp = false;
+    GLuint m_sphere_vbo;
+    GLuint m_sphere_vao;
+    std::vector<float> m_sphere_data;
+    GLuint m_cone_vbo;
+    GLuint m_cone_vao;
+    std::vector<float> m_cone_data;
+    GLuint m_cube_vbo;
+    GLuint m_cube_vao;
+    std::vector<float> m_cube_data;
+    GLuint m_cylinder_vbo;
+    GLuint m_cylinder_vao;
+    std::vector<float> m_cylinder_data;
 
+    // lighting data
     glm::vec4 m_lightPos;
 
     float m_ka;
