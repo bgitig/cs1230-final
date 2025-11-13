@@ -33,7 +33,7 @@ uniform int numLights;
 void main() {
    fragColor = vec4(0,0,0,1);
 
-   fragColor += (m_ka * m_cAmbient);
+   fragColor += m_ka * m_cAmbient;
 
    for (int i = 0; i < numLights; i++) {
       vec4 intensity = m_lightColor[i];
@@ -73,7 +73,6 @@ void main() {
       vec3 E = normalize(camera_pos.xyz-position);
       float x = clamp(dot(R,E), 0.0f, 1.0f);
       float specular = x <= 0 ? 0 : m_shininess <= 0 ? 0 : pow(x, m_shininess);
-      // fragColor += vec4(specular);
       fragColor += coef * m_ks * m_cSpecular * specular;
    }
 }

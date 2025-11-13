@@ -223,13 +223,10 @@ void Realtime::updateLights() {
     m_ks = gd.ks;
 
     glUseProgram(m_shader);
+
     std::vector<SceneLightData> lights = renderData.lights;
     glUniform1i(glGetUniformLocation(m_shader, "numLights"), lights.size());
     for (int i = 0; i < lights.size(); i++) {
-        std::cout<<"updating lights"<<std::endl;
-        GLint wloc = glGetUniformLocation(m_shader, "white");
-        glUniform1f(wloc, .3f);
-
         SceneLightData light = lights[i];
 
         LightType type = light.type;
@@ -259,8 +256,6 @@ void Realtime::updateLights() {
 
         GLint lightAngleLoc = glGetUniformLocation(m_shader, ("m_lightAngle["+std::to_string(i)+"]").c_str());
         glUniform1f(lightAngleLoc, light.angle);
-
-
     }
     glUseProgram(0);
 }
@@ -269,11 +264,6 @@ void Realtime::sceneChanged() {
     bool success = SceneParser::parse(settings.sceneFilePath, renderData);
     if (!success) return;
 
-    for (auto& shape : renderData.shapes) {
-        for (int i = 0; i < 4; i++) {
-            std::cout<<"amb: "<<shape.primitive.material.cAmbient[i]<<std::endl;
-        }
-    }
 
     SceneCameraData camData = renderData.cameraData;
     camera.cameraSetUp(camData, size().width(), size().height());
@@ -283,25 +273,12 @@ void Realtime::sceneChanged() {
     updateCamera();
     updateLights();
 
-    // for (SceneLightData light : renderData.lights) {
-
 
     update(); // asks for a PaintGL() call to occur
 }
 
 void Realtime::settingsChanged() {
     if (isSetUp) updateShapes();
-
-    // for (Mesh &mesh : m_meshes) {
-    //     std::vector<float> newData = makeShape(mesh.shape.primitive.type, settings.shapeParameter1, settings.shapeParameter2)->getVertexData();
-    //     glBindBuffer(GL_ARRAY_BUFFER, mesh.vbo);
-    //     glBufferData(GL_ARRAY_BUFFER, newData.size() * sizeof(GLfloat), newData.data(), GL_STATIC_DRAW);
-    //     mesh.vertexCount = newData.size() / 6;
-    // }
-    std::cout<<"settings changed"<<std::endl;
-    // m_view = camera.calculateViewMatrix(camLook, camUp, camPos);
-    // m_proj = camera.calculateProjectionMatrix(settings.nearPlane, settings.farPlane);
-
     update(); // asks for a PaintGL() call to occur
 }
 
@@ -349,26 +326,21 @@ void Realtime::mouseMoveEvent(QMouseEvent *event) {
         m_prev_mouse_pos = glm::vec2(posX, posY);
 
         // Use deltaX and deltaY here to rotate
-        float xAngle = deltaX * .005f;
-        float yAngle = deltaY * .005f;
+        float xAngle = deltaX * .01f;
+        float yAngle = deltaY * .01f;
 
         // mouse x: rotate about (0,1,0)
         glm::vec3 xAxis(0.0f, 1.0f, 0.0f);
         glm::mat3 xRot = rotMat(xAxis, xAngle);
         camLook = glm::normalize(xRot*camLook);
-        camUp = glm::normalize(camUp*xRot);
+        // camUp = glm::normalize(xRot*camUp);
 
         // mouse y: rotate about axis defined by vector perpindicular to look and up
         glm::vec3 yAxis = glm::normalize(glm::cross(camLook, camUp));
         glm::mat3 yRot = rotMat(yAxis, yAngle);
         camLook = glm::normalize(yRot*camLook);
-        camUp = glm::normalize(yRot*camUp);
+        camUp = glm::normalize(glm::cross(yAxis,camLook));
 
-        // // Optionally clamp vertical rotation to prevent flipping
-        // if (glm::abs(glm::dot(newFront, worldUp)) < 0.99f) {
-        //     m_cameraFront = newFront;
-        //     m_cameraUp = newUp;
-        // }
         updateCamera();
 \
         update(); // asks for a PaintGL() call to occur
