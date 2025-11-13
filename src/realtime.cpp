@@ -178,16 +178,11 @@ void Realtime::paintGL() {
         glUniform4fv(cameraPosLoc, 1, &camPos[0]);
 
         GLint ka_location = glGetUniformLocation(m_shader, "m_ka");
-        glUniform1f(ka_location, m_ka);
+        glUniform1f(ka_location, renderData.globalData.ka);
         GLint kd_location = glGetUniformLocation(m_shader, "m_kd");
         glUniform1f(kd_location, m_kd);
         GLint ks_location = glGetUniformLocation(m_shader, "m_ks");
         glUniform1f(ks_location, m_ks);
-
-        // m_lightPos = inverse(m_model) * m_lightPos;
-        // GLint light_location = glGetUniformLocation(m_shader, "m_lightPos");
-        // glUniform4fv(light_location, 1, &m_lightPos[0]);
-
 
         SceneMaterial material = shape.primitive.material;
         GLint cAmbient_location = glGetUniformLocation(m_shader, "m_cAmbient");
@@ -200,7 +195,6 @@ void Realtime::paintGL() {
         glUniform1f(shininess_location, material.shininess);
         GLint cReflectivelocation = glGetUniformLocation(m_shader, "m_cReflective");
         glUniform4f(cReflectivelocation, material.cReflective.x, material.cReflective.y, material.cReflective.z, material.cReflective.w);
-
 
         glDrawArrays(GL_TRIANGLES, 0, typeInterpretVertices(shape.primitive.type));
         glBindVertexArray(0);
@@ -223,12 +217,18 @@ void Realtime::updateCamera() {
 }
 
 void Realtime::updateLights() {
+    SceneGlobalData gd = renderData.globalData;
+    m_ka = gd.ka;
+    m_kd = gd.kd;
+    m_ks = gd.ks;
+
     glUseProgram(m_shader);
     std::vector<SceneLightData> lights = renderData.lights;
+    glUniform1i(glGetUniformLocation(m_shader, "numLights"), lights.size());
     for (int i = 0; i < lights.size(); i++) {
         std::cout<<"updating lights"<<std::endl;
         GLint wloc = glGetUniformLocation(m_shader, "white");
-        glUniform1f(wloc, 1.0f);
+        glUniform1f(wloc, .3f);
 
         SceneLightData light = lights[i];
 
@@ -245,7 +245,7 @@ void Realtime::updateLights() {
         glm::vec3 lightFunction= light.function;
         glUniform3f(lightFunctionLoc, lightFunction.x, lightFunction.y, lightFunction.z);
 
-        // might need to multiply light pos by inverse ctm
+        // might need to multiply light pos by inverse ctm - can do that in paintgl?
         GLint lightPosLoc = glGetUniformLocation(m_shader, ("m_lightPos["+std::to_string(i)+"]").c_str());
         glm::vec4 lightPos = light.pos;
         glUniform4f(lightPosLoc, lightPos.x, lightPos.y, lightPos.z, lightPos.w);
@@ -260,9 +260,7 @@ void Realtime::updateLights() {
         GLint lightAngleLoc = glGetUniformLocation(m_shader, ("m_lightAngle["+std::to_string(i)+"]").c_str());
         glUniform1f(lightAngleLoc, light.angle);
 
-        // glm::vec3 directionToLight = light.type == LightType::LIGHT_DIRECTIONAL ? glm::vec3(glm::normalize(-light.dir)) : glm::normalize(glm::vec3(light.pos)-position);
-        // GLint lightAngleLoc = glGetUniformLocation(m_shader, "m_lightAngle["+std::to_string(i)+"]");
-        // glUniform1f(lightAngleLoc, lights[i].angle);
+
     }
     glUseProgram(0);
 }
@@ -270,6 +268,12 @@ void Realtime::updateLights() {
 void Realtime::sceneChanged() {
     bool success = SceneParser::parse(settings.sceneFilePath, renderData);
     if (!success) return;
+
+    for (auto& shape : renderData.shapes) {
+        for (int i = 0; i < 4; i++) {
+            std::cout<<"amb: "<<shape.primitive.material.cAmbient[i]<<std::endl;
+        }
+    }
 
     SceneCameraData camData = renderData.cameraData;
     camera.cameraSetUp(camData, size().width(), size().height());

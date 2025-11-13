@@ -111,7 +111,6 @@ private:
     float m_ka;
     float m_kd;
     float m_ks;
-    float m_shininess;
 
     QPoint m_prevMousePos;
     float  m_angleX;

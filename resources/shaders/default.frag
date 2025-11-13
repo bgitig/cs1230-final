@@ -5,6 +5,8 @@ in vec3 normal;
 
 out vec4 fragColor;
 
+uniform mat4 m_model;
+
 uniform float m_ka;
 uniform float m_kd;
 uniform float m_ks;
@@ -26,16 +28,18 @@ uniform float directionToLight[8];
 
 uniform vec4 camera_pos;
 
-uniform float white;
+uniform int numLights;
 
 void main() {
-   fragColor = vec4(m_ka * m_cAmbient);
+   fragColor = vec4(0,0,0,1);
 
-   for (int i = 0; i < 8; i++) {
+   fragColor += (m_ka * m_cAmbient);
+
+   for (int i = 0; i < numLights; i++) {
       vec4 intensity = m_lightColor[i];
-
       int type = m_lightType[i];
-      vec3 lightPos = vec3(m_lightPos[i]);
+
+      vec3 lightPos = vec3(inverse(m_model)*m_lightPos[i]);
       vec3 directionToLight = type == 1 ? normalize(vec3(-m_lightDir[i])) : normalize(vec3(lightPos)-position);
       float distance = length(lightPos-position);
 
@@ -50,7 +54,7 @@ void main() {
             intensity *= (1-falloff2);
          }
          else if (x < theta_i) {
-            continue;
+            intensity = intensity;;
          }
          else {
             intensity = vec4(0);
@@ -61,15 +65,15 @@ void main() {
       float fatt = min(1.0f, attn);
       vec4 coef = fatt * intensity;
 
-      vec3 L = normalize(lightPos-position);
       vec3 N = normalize(normal);
-      float diffuse = m_kd * clamp(dot(N,L), 0.0f, 1.0f);
-      fragColor += coef * diffuse * m_cDiffuse;
+      float diffuse = clamp(dot(N, directionToLight), 0.0f, 1.0f);
+      fragColor += coef * m_kd * m_cDiffuse * diffuse;
 
-      vec3 R = normalize(reflect(-L,N));
+      vec3 R = reflect(-directionToLight,N);
       vec3 E = normalize(camera_pos.xyz-position);
-      float specular = m_shininess == 0 ? m_ks : m_ks * pow(clamp(dot(R,E), 0.0f, 1.0f), m_shininess);
-      fragColor += coef * specular * m_cSpecular;
+      float x = clamp(dot(R,E), 0.0f, 1.0f);
+      float specular = x <= 0 ? 0 : m_shininess <= 0 ? 0 : pow(x, m_shininess);
+      // fragColor += vec4(specular);
+      fragColor += coef * m_ks * m_cSpecular * specular;
    }
-   fragColor = vec4(m_ka);
 }
