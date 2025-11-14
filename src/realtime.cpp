@@ -267,8 +267,8 @@ void Realtime::sceneChanged() {
 
     SceneCameraData camData = renderData.cameraData;
     camera.cameraSetUp(camData, size().width(), size().height());
-    camLook = glm::vec3(camData.look);
-    camUp = glm::vec3(camData.up);
+    camLook = glm::normalize(glm::vec3(camData.look));
+    camUp = glm::normalize(glm::vec3(camData.up));
     camPos = camData.pos;
     updateCamera();
     updateLights();
