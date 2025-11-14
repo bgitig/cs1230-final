@@ -39,7 +39,7 @@ void main() {
       vec4 intensity = m_lightColor[i];
       int type = m_lightType[i];
 
-      vec3 lightPos = vec3(inverse(m_model)*m_lightPos[i]);
+      vec3 lightPos = vec3(m_lightPos[i]);
       vec3 directionToLight = type == 1 ? normalize(vec3(-m_lightDir[i])) : normalize(vec3(lightPos)-position);
       float distance = length(lightPos-position);
 

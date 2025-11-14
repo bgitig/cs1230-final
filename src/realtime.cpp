@@ -228,7 +228,6 @@ void Realtime::updateLights() {
     glUniform1i(glGetUniformLocation(m_shader, "numLights"), lights.size());
     for (int i = 0; i < lights.size(); i++) {
         SceneLightData light = lights[i];
-
         LightType type = light.type;
         int typeInt = type == LightType::LIGHT_POINT ? 0 : (type == LightType::LIGHT_DIRECTIONAL ? 1 : 2);
         GLint lightTypeLoc = glGetUniformLocation(m_shader, ("m_lightType["+std::to_string(i)+"]").c_str());
@@ -261,6 +260,7 @@ void Realtime::updateLights() {
 }
 
 void Realtime::sceneChanged() {
+    renderData.lights.clear();
     bool success = SceneParser::parse(settings.sceneFilePath, renderData);
     if (!success) return;
 
@@ -326,23 +326,22 @@ void Realtime::mouseMoveEvent(QMouseEvent *event) {
         m_prev_mouse_pos = glm::vec2(posX, posY);
 
         // Use deltaX and deltaY here to rotate
-        float xAngle = deltaX * .01f;
-        float yAngle = deltaY * .01f;
+        float xAngle = -deltaX * .01f;
+        float yAngle = -deltaY * .01f;
 
         // mouse x: rotate about (0,1,0)
         glm::vec3 xAxis(0.0f, 1.0f, 0.0f);
         glm::mat3 xRot = rotMat(xAxis, xAngle);
-        camLook = glm::normalize(xRot*camLook);
-        // camUp = glm::normalize(xRot*camUp);
 
         // mouse y: rotate about axis defined by vector perpindicular to look and up
         glm::vec3 yAxis = glm::normalize(glm::cross(camLook, camUp));
         glm::mat3 yRot = rotMat(yAxis, yAngle);
-        camLook = glm::normalize(yRot*camLook);
-        camUp = glm::normalize(glm::cross(yAxis,camLook));
+
+        camLook = glm::normalize(xRot*yRot*camLook);
+        camUp = glm::normalize(yRot*xRot*camUp);
 
         updateCamera();
-\
+
         update(); // asks for a PaintGL() call to occur
     }
 }
@@ -356,14 +355,14 @@ void Realtime::timerEvent(QTimerEvent *event) {
     float velocity = 5.0f * deltaTime;
     glm::vec3 right = glm::normalize(glm::cross(camLook, camUp));
 
-    if (m_keyMap[Qt::Key_W]) camPos -= glm::vec4(camLook * velocity, 0.0f);
-    if (m_keyMap[Qt::Key_A]) camPos += glm::vec4(right * velocity, 0.0f);
-    if (m_keyMap[Qt::Key_S]) camPos += glm::vec4(camLook * velocity, 0.0f);
-    if (m_keyMap[Qt::Key_D]) camPos -= glm::vec4(right * velocity, 0.0f);
+    if (m_keyMap[Qt::Key_W]) camPos += glm::vec4(camLook * velocity, 0.0f);
+    if (m_keyMap[Qt::Key_A]) camPos -= glm::vec4(right * velocity, 0.0f);
+    if (m_keyMap[Qt::Key_S]) camPos -= glm::vec4(camLook * velocity, 0.0f);
+    if (m_keyMap[Qt::Key_D]) camPos += glm::vec4(right * velocity, 0.0f);
 
     // // // change to be along (0,1 or -1,0)
-    if (m_keyMap[Qt::Key_Control]) camPos += glm::vec4(0.0f, 1.0f, 0.0f, 0.0f) * velocity;
-    if (m_keyMap[Qt::Key_Space]) camPos -= glm::vec4(0.0f, 1.0f, 0.0f, 0.0f) * velocity;
+    if (m_keyMap[Qt::Key_Control]) camPos -= glm::vec4(0.0f, 1.0f, 0.0f, 0.0f) * velocity;
+    if (m_keyMap[Qt::Key_Space]) camPos += glm::vec4(0.0f, 1.0f, 0.0f, 0.0f) * velocity;
     updateCamera();
 
     update(); // asks for a PaintGL() call to occur

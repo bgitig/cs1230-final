@@ -38,14 +38,14 @@ void Cone::makeCapSlice(float currentTheta, float nextTheta) {
 }
 
 glm::vec3 Cone::calcNorm(glm::vec3& pt) {
-    if (sqrt(pt.x*pt.x+pt.z*pt.z) < 1e-4f) {
-        return glm::normalize(glm::vec3(0.f, 0.5f, 0.f));
+    if (sqrt(pt.x*pt.x+pt.z*pt.z) < 1e-6f) {
+        return glm::normalize(glm::vec3(0.f, 1.0f, 0.f));
     }
-    float xNorm = (2 * pt.x);
-    float yNorm = -(1.f/4.f) * (2.f * pt.y - 1.f);
-    float zNorm = (2 * pt.z);
+    // float xNorm = (2 * pt.x);
+    // float yNorm = -(1.f/4.f) * (2.f * pt.y - 1.f);
+    // float zNorm = (2 * pt.z);
 
-    return glm::normalize(glm::vec3{ xNorm, yNorm, zNorm });
+    return glm::normalize(glm::vec3{ pt.x, .5*sqrt(pt.x*pt.x+pt.z*pt.z), pt.z});
 }
 
 void Cone::makeSlopeTile(glm::vec3 topLeft,
