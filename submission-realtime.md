@@ -58,6 +58,10 @@ https://github.com/BrownCSCI1230/projects_realtime_template/assets/45575415/710f
 ##### Your Output
 
 
+https://github.com/user-attachments/assets/019de3a3-d6b0-4788-8297-51bebc8450af
+
+
+
 <!---
 Paste your output on top of this comment!
 -->
@@ -72,14 +76,22 @@ https://github.com/BrownCSCI1230/projects_realtime_template/assets/45575415/a14f
 
 ##### Your Output
 
+
+https://github.com/user-attachments/assets/a23f49f3-880f-4e8a-8c90-1404ba4d998e
+
+
 <!---
 Paste your output on top of this comment!
 -->
 
 ### Design Choices
+I generated and bound my vbos/vaos on initialize, only rebinding the data when the settings changed (to appropriately handle the shape tessellation parameters). This was made easily by an virtual Shape class I had, from which all my primitives were derives, so updating and accessing a given shape's data was generalizable and easy. I looped through the scene's renderData shapes in paintgl so that only shapes in the scene would have their data actually rendered. RenderData was changed on sceneChanged, appropriately updating lights, shapes, and camera information. I had an updateCamera function that recomputed the view and projection matrices and stored them as class variables whenever the camera was manipulated (ie. on scene change or during camera movement). My vertex and fragment shaders are very similar to lab10, with the fragment shader having expanded Phong functionality akin to projects 2-4.  
 
 ### Collaboration/References
+NA
 
 ### Known Bugs
+Cone tip normal calculationss are slightly off leading to minor lighting bugs.
 
 ### Extra Credit
+NA
