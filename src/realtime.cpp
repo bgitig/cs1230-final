@@ -68,12 +68,45 @@ void Realtime::updateShapes() {
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
+void Realtime::makeFBOs(){
+    glGenTextures(1, &sceneColorTex);
+    glBindTexture(GL_TEXTURE_2D, sceneColorTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m_fbo_width, m_fbo_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    GLuint rbo;
+    glGenRenderbuffers(1, &rbo);
+    glBindRenderbuffer(GL_RENDERBUFFER, rbo);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, m_fbo_width, m_fbo_height);
+    glBindRenderbuffer(GL_FRAMEBUFFER, 0);
+
+    glGenFramebuffers(1, &sceneFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, sceneFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, sceneFBO, 0);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbo);
+    glBindFramebuffer(GL_RENDERBUFFER, 0);
+
+    glGenFramebuffers(1, &occFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, occFBO);
+    occW = m_fbo_width/4, occH = m_fbo_height/4;
+    glGenTextures(1, &occTex);
+    glBindTexture(GL_TEXTURE_2D, occTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, occW, occH, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, occTex, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
 void Realtime::setUp() {
     makeShapes();
     setUpBindings(m_sphere_data, m_sphere_vbo, m_sphere_vao);
     setUpBindings(m_cone_data, m_cone_vbo, m_cone_vao);
     setUpBindings(m_cube_data, m_cube_vbo, m_cube_vao);
     setUpBindings(m_cylinder_data, m_cylinder_vbo, m_cylinder_vao);
+    makeFBOs();
     isSetUp = true;
 }
 
@@ -98,6 +131,10 @@ void Realtime::finish() {
 
 void Realtime::initializeGL() {
     m_devicePixelRatio = this->devicePixelRatio();
+    m_screen_width = size().width() * m_devicePixelRatio;
+    m_screen_height = size().height() * m_devicePixelRatio;
+    m_fbo_width = m_screen_width;
+    m_fbo_height = m_screen_height;
 
     m_timer = startTimer(1000/60);
     m_elapsedTimer.start();
@@ -121,6 +158,27 @@ void Realtime::initializeGL() {
     // Students: anything requiring OpenGL calls when the program starts should be done here
     glClearColor(0,0,0,1);
     m_shader = ShaderLoader::createShaderProgram(":/resources/shaders/default.vert", ":/resources/shaders/default.frag");
+    // occ_shader = ShaderLoader::createShaderProgram(":/resources/shaders/default.vert", ":/resources/shaders/default.frag");
+    godrayShader = ShaderLoader::createShaderProgram("C:/cs1230/proj5-bgitig/resources/shaders/godrays.vert", "C:/cs1230/proj5-bgitig/resources/shaders/godrays.frag");
+
+    std::vector<float> screen_quad = {
+        // pos        // uv
+        -1, -1, 0,   0, 0,
+        1, -1, 0,   1, 0,
+        -1,  1, 0,   0, 1,
+        1,  1, 0,   1, 1,
+    };
+    glGenVertexArrays(1, &quadVAO);
+    glGenBuffers(1, &quadVBO);
+    glBindVertexArray(quadVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
+    glBufferData(GL_ARRAY_BUFFER, screen_quad.size()*sizeof(GLfloat), screen_quad.data(), GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+    glBindVertexArray(0);
+
     setUp();
 }
 
@@ -156,6 +214,60 @@ GLsizei Realtime::typeInterpretVertices(PrimitiveType type) {
 
 void Realtime::paintGL() {
     // Students: anything requiring OpenGL calls every frame should be done here
+    // SCENE PASS
+    glBindFramebuffer(GL_FRAMEBUFFER, sceneFBO);
+    glViewport(0, 0, m_fbo_width, m_fbo_height);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    glUseProgram(m_shader);
+
+    for (RenderShapeData shape : renderData.shapes) {
+        glBindVertexArray(typeInterpretVao(shape.primitive.type));
+
+        m_mvp = m_proj * m_view * shape.ctm;
+        GLint mvpLoc = glGetUniformLocation(m_shader, "m_mvp");
+        glUniformMatrix4fv(mvpLoc, 1, GL_FALSE, &m_mvp[0][0]);
+
+        m_model = shape.ctm;
+        GLint model_location = glGetUniformLocation(m_shader, "m_model");
+        glUniformMatrix4fv(model_location, 1, GL_FALSE, &m_model[0][0]);
+
+        ictm = shape.ictm;
+        GLint ictmLoc = glGetUniformLocation(m_shader, "ictm");
+        glUniformMatrix3fv(ictmLoc, 1, GL_FALSE, &ictm[0][0]);
+
+        GLint cameraPosLoc = glGetUniformLocation(m_shader, "camera_pos");
+        glUniform4fv(cameraPosLoc, 1, &camPos[0]);
+
+        GLint ka_location = glGetUniformLocation(m_shader, "m_ka");
+        glUniform1f(ka_location, renderData.globalData.ka);
+        GLint kd_location = glGetUniformLocation(m_shader, "m_kd");
+        glUniform1f(kd_location, m_kd);
+        GLint ks_location = glGetUniformLocation(m_shader, "m_ks");
+        glUniform1f(ks_location, m_ks);
+
+        SceneMaterial material = shape.primitive.material;
+        GLint cAmbient_location = glGetUniformLocation(m_shader, "m_cAmbient");
+        glUniform4f(cAmbient_location, material.cAmbient.x, material.cAmbient.y, material.cAmbient.z, material.cAmbient.w);
+        GLint cDiffuse_location = glGetUniformLocation(m_shader, "m_cDiffuse");
+        glUniform4f(cDiffuse_location, material.cDiffuse.x, material.cDiffuse.y, material.cDiffuse.z, material.cDiffuse.w);
+        GLint cSpecular_location = glGetUniformLocation(m_shader, "m_cSpecular");
+        glUniform4f(cSpecular_location, material.cSpecular.x, material.cSpecular.y, material.cSpecular.z, material.cSpecular.w);
+        GLint shininess_location = glGetUniformLocation(m_shader, "m_shininess");
+        glUniform1f(shininess_location, material.shininess);
+        GLint cReflectivelocation = glGetUniformLocation(m_shader, "m_cReflective");
+        glUniform4f(cReflectivelocation, material.cReflective.x, material.cReflective.y, material.cReflective.z, material.cReflective.w);
+
+        GLint occ_location = glGetUniformLocation(m_shader, "occ");
+        glUniform1f(occ_location, false);
+
+        glDrawArrays(GL_TRIANGLES, 0, typeInterpretVertices(shape.primitive.type));
+        glBindVertexArray(0);
+    }
+
+    // OCCLUSION PASS
+    glBindFramebuffer(GL_FRAMEBUFFER, occFBO);
+    glViewport(0,0,occW,occH);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glUseProgram(m_shader);
 
@@ -196,11 +308,44 @@ void Realtime::paintGL() {
         GLint cReflectivelocation = glGetUniformLocation(m_shader, "m_cReflective");
         glUniform4f(cReflectivelocation, material.cReflective.x, material.cReflective.y, material.cReflective.z, material.cReflective.w);
 
+        GLint occ_location = glGetUniformLocation(m_shader, "occ");
+        glUniform1f(occ_location, true);
+
         glDrawArrays(GL_TRIANGLES, 0, typeInterpretVertices(shape.primitive.type));
         glBindVertexArray(0);
     }
 
+    // GODRAYS PASS
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0,0,m_fbo_width,m_fbo_height);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    glUseProgram(godrayShader);
+    glBindVertexArray(quadVAO);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, sceneColorTex);
+    glUniform1i(glGetUniformLocation(godrayShader, "sceneTex"), 0);
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, occTex);
+    glUniform1i(glGetUniformLocation(godrayShader, "occTex"), 1);
+
+    // right now this will only work with 1 light (m_lightpos is set in update lights)
+    glm::vec4 clip = m_proj * m_view * m_lightPos;
+    glm::vec3 ndc = glm::vec3(clip) / clip.w;
+    glm::vec2 screen = (glm::vec2(ndc) * 0.5f) + 0.5f;
+
+    glUniform2f(glGetUniformLocation(godrayShader,"lightScreenPos"), screen.x, screen.y);
+    glUniform1f(glGetUniformLocation(godrayShader,"exposure"), 0.03f);
+    glUniform1f(glGetUniformLocation(godrayShader,"decay"), 0.95f);
+    glUniform1f(glGetUniformLocation(godrayShader,"density"), 0.8f);
+    glUniform1f(glGetUniformLocation(godrayShader,"weight"), 0.6f);
+    glUniform1i(glGetUniformLocation(godrayShader,"NUM_SAMPLES"), 60);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
     glUseProgram(0);
+
 }
 
 void Realtime::resizeGL(int w, int h) {
@@ -228,6 +373,8 @@ void Realtime::updateLights() {
     glUniform1i(glGetUniformLocation(m_shader, "numLights"), lights.size());
     for (int i = 0; i < lights.size(); i++) {
         SceneLightData light = lights[i];
+        m_lightPos = light.pos;
+
         LightType type = light.type;
         int typeInt = type == LightType::LIGHT_POINT ? 0 : (type == LightType::LIGHT_DIRECTIONAL ? 1 : 2);
         GLint lightTypeLoc = glGetUniformLocation(m_shader, ("m_lightType["+std::to_string(i)+"]").c_str());

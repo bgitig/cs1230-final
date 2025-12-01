@@ -54,6 +54,7 @@ private:
     void setUpBindings(std::vector<float> &shapeData, GLuint &vbo, GLuint &vao);
     void makeShapes();
     void updateShapes();
+    void makeFBOs();
     void setUp();
     GLuint typeInterpretVao(PrimitiveType type);
     GLsizei typeInterpretVertices(PrimitiveType type);
@@ -116,4 +117,18 @@ private:
     float  m_angleX;
     float  m_angleY;
     float  m_zoom;
+
+    GLuint m_defaultFBO;
+    int m_fbo_width;
+    int m_fbo_height;
+    int m_screen_width;
+    int m_screen_height;
+
+    GLsizei occW, occH;
+    GLuint sceneFBO, sceneColorTex;
+    GLuint occFBO, occTex;
+    GLuint godraysFBO, godraysTex;
+    GLuint quadVAO, quadVBO;
+    GLuint occShader, godrayShader, compositeShader;
+
 };

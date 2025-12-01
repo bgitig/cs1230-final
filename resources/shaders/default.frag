@@ -30,6 +30,8 @@ uniform vec4 camera_pos;
 
 uniform int numLights;
 
+uniform bool occ;
+
 void main() {
    fragColor = vec4(0,0,0,1);
 
@@ -74,5 +76,9 @@ void main() {
       float x = clamp(dot(R,E), 0.0f, 1.0f);
       float specular = x <= 0 ? 0 : m_shininess <= 0 ? 0 : pow(x, m_shininess);
       fragColor += coef * m_ks * m_cSpecular * specular;
+   }
+
+   if (occ) {
+      fragColor = vec4(0,0,0,1);
    }
 }
