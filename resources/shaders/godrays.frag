@@ -2,8 +2,8 @@
 
 out vec4 fragColor;
 
-uniform sampler2D occTex;
 uniform sampler2D sceneTex;
+uniform sampler2D occTex;
 
 uniform vec2 lightScreenPos;
 uniform float exposure;
@@ -25,11 +25,11 @@ void main() {
 
     for (int i = 0; i < NUM_SAMPLES; i++) {
         coord += delta;
-        float sample = texture(occTex, coord).r;
+        float x = texture(occTex, coord).r;
 
-        sample *= illuminationDecay * weight;
+        x *= illuminationDecay * weight;
 
-        color += vec3(sample);
+        color += vec3(x);
         illuminationDecay *= decay;
     }
 

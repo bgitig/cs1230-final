@@ -54,13 +54,15 @@ private:
     void setUpBindings(std::vector<float> &shapeData, GLuint &vbo, GLuint &vao);
     void makeShapes();
     void updateShapes();
-    void makeFBOs();
+    void makeFBO(GLuint &tex, GLuint &rbo, GLuint &fboo);
     void setUp();
     GLuint typeInterpretVao(PrimitiveType type);
     GLsizei typeInterpretVertices(PrimitiveType type);
     void updateCamera();
     void updateLights();
     void paintTexture(GLuint texture);
+    void drawShapes(bool occlusion);
+    void setFBO(GLuint fbo);
 
     // Tick Related Variables
     int m_timer;                                        // Stores timer which attempts to run ~60 times per second
@@ -126,10 +128,10 @@ private:
     int m_screen_height;
 
     GLsizei occW, occH;
-    GLuint sceneFBO, sceneRBO, sceneColorTex;
+    GLuint sceneFBO, sceneRBO, sceneTex;
     GLuint occFBO, occRBO, occTex;
     GLuint godraysFBO, godraysRBO, godraysTex;
     GLuint quadVAO, quadVBO;
-    GLuint occShader, godrayShader, compositeShader, m_texture_shader;
+    GLuint godrayShader, compositeShader, m_texture_shader;
 
 };
