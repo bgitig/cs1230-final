@@ -86,7 +86,9 @@ void Realtime::makeFBO(GLuint &tex, GLuint &rbo, GLuint &fbo) {
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbo);
-    glBindFramebuffer(GL_FRAMEBUFFER, m_defaultFBO);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        std::cerr << "FBO incomplete!" << std::endl;
+    }
 }
 
 void Realtime::setUp() {
@@ -96,9 +98,11 @@ void Realtime::setUp() {
     setUpBindings(m_cube_data, m_cube_vbo, m_cube_vao);
     setUpBindings(m_cylinder_data, m_cylinder_vbo, m_cylinder_vao);
 
-    // makeFBO(sceneTex, sceneRBO, sceneFBO);
+    makeFBO(sceneTex, sceneRBO, sceneFBO);
     makeFBO(occTex, occRBO, occFBO);
     // makeFBO(godraysTex, godraysRBO, godraysFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
 
     isSetUp = true;
 }
@@ -152,7 +156,6 @@ void Realtime::initializeGL() {
     glClearColor(0,0,0,1);
     m_shader = ShaderLoader::createShaderProgram(":/resources/shaders/default.vert", ":/resources/shaders/default.frag");
     m_texture_shader = ShaderLoader::createShaderProgram("C:/cs1230/proj5-bgitig/resources/shaders/texture.vert", "C:/cs1230/proj5-bgitig/resources/shaders/texture.frag");
-    // occ_shader = ShaderLoader::createShaderProgram(":/resources/shaders/default.vert", ":/resources/shaders/default.frag");
     godrayShader = ShaderLoader::createShaderProgram("C:/cs1230/proj5-bgitig/resources/shaders/godrays.vert", "C:/cs1230/proj5-bgitig/resources/shaders/godrays.frag");
 
     m_defaultFBO = 2;
@@ -280,13 +283,6 @@ void Realtime::setFBO(GLuint fbo) {
 }
 
 void Realtime::paintGL() {
-    // SCENE PASS
-    // glClearColor(0, 0, 0, 1);
-    // setFBO(sceneFBO);
-    // drawShapes(false);
-    // setFBO(m_defaultFBO);
-    // paintTexture(sceneTex);
-
     // OCCLUSION PASS
     glClearColor(1, 1, 1, 1);
     setFBO(occFBO);
@@ -294,8 +290,13 @@ void Realtime::paintGL() {
     setFBO(m_defaultFBO);
     paintTexture(occTex);
 
-    // // GODRAYS PASS
+    // // SCENE PASS
     // glClearColor(0, 0, 0, 1);
+    // setFBO(sceneFBO);
+    // drawShapes(false);
+    // paintTexture(sceneTex);
+
+    // // GODRAYS PASS
     // setFBO(godraysFBO);
     // glUseProgram(godrayShader);
     // glBindVertexArray(quadVAO);
@@ -318,9 +319,9 @@ void Realtime::paintGL() {
     // glUniform1f(glGetUniformLocation(godrayShader,"density"), 0.8f);
     // glUniform1f(glGetUniformLocation(godrayShader,"weight"), 0.6f);
     // glUniform1i(glGetUniformLocation(godrayShader,"NUM_SAMPLES"), 60);
+
     // setFBO(m_defaultFBO);
     // paintTexture(godraysTex);
-
 }
 
 void Realtime::resizeGL(int w, int h) {
