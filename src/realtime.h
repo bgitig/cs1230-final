@@ -60,6 +60,7 @@ private:
     GLsizei typeInterpretVertices(PrimitiveType type);
     void updateCamera();
     void updateLights();
+    void paintTexture(GLuint texture);
 
     // Tick Related Variables
     int m_timer;                                        // Stores timer which attempts to run ~60 times per second
@@ -125,10 +126,10 @@ private:
     int m_screen_height;
 
     GLsizei occW, occH;
-    GLuint sceneFBO, sceneColorTex;
-    GLuint occFBO, occTex;
-    GLuint godraysFBO, godraysTex;
+    GLuint sceneFBO, sceneRBO, sceneColorTex;
+    GLuint occFBO, occRBO, occTex;
+    GLuint godraysFBO, godraysRBO, godraysTex;
     GLuint quadVAO, quadVBO;
-    GLuint occShader, godrayShader, compositeShader;
+    GLuint occShader, godrayShader, compositeShader, m_texture_shader;
 
 };

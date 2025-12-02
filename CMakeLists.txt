@@ -56,7 +56,9 @@ add_subdirectory(glm)
 add_library(StaticGLEW STATIC glew/src/glew.c
     src/utils/camera.h src/utils/camera.cpp
     resources/shaders/godrays.vert
-    resources/shaders/godrays.frag)
+    resources/shaders/godrays.frag
+    resources/shaders/texture.frag
+    resources/shaders/texture.vert)
 include_directories(${PROJECT_NAME} PRIVATE glew/include)
 
 # Specifies libraries to be linked (Qt components, glew, etc)
