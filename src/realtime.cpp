@@ -89,6 +89,8 @@ void Realtime::makeFBO(GLuint &tex, GLuint &rbo, GLuint &fbo) {
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
         std::cerr << "FBO incomplete!" << std::endl;
     }
+    glBindFramebuffer(GL_FRAMEBUFFER, defaultFBO);
+
 }
 
 void Realtime::setUp() {
@@ -101,7 +103,6 @@ void Realtime::setUp() {
     makeFBO(sceneTex, sceneRBO, sceneFBO);
     makeFBO(occTex, occRBO, occFBO);
     // makeFBO(godraysTex, godraysRBO, godraysFBO);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 
     isSetUp = true;
@@ -158,7 +159,7 @@ void Realtime::initializeGL() {
     m_texture_shader = ShaderLoader::createShaderProgram("C:/cs1230/proj5-bgitig/resources/shaders/texture.vert", "C:/cs1230/proj5-bgitig/resources/shaders/texture.frag");
     godrayShader = ShaderLoader::createShaderProgram("C:/cs1230/proj5-bgitig/resources/shaders/godrays.vert", "C:/cs1230/proj5-bgitig/resources/shaders/godrays.frag");
 
-    m_defaultFBO = 2;
+    defaultFBO = 2;
     std::vector<GLfloat> fullscreen_quad_data =
         { //     POSITIONS    //
             -1.f,  1.f, 0.0f, 0,1.f,
@@ -287,7 +288,7 @@ void Realtime::paintGL() {
     glClearColor(1, 1, 1, 1);
     setFBO(occFBO);
     drawShapes(true);
-    setFBO(m_defaultFBO);
+    setFBO(defaultFBO);
     paintTexture(occTex);
 
     // // SCENE PASS
@@ -320,7 +321,7 @@ void Realtime::paintGL() {
     // glUniform1f(glGetUniformLocation(godrayShader,"weight"), 0.6f);
     // glUniform1i(glGetUniformLocation(godrayShader,"NUM_SAMPLES"), 60);
 
-    // setFBO(m_defaultFBO);
+    // setFBO(defaultFBO);
     // paintTexture(godraysTex);
 }
 
