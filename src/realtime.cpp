@@ -90,8 +90,18 @@ void Realtime::makeFBO(GLuint &tex, GLuint &rbo, GLuint &fbo) {
         std::cerr << "FBO incomplete!" << std::endl;
     }
     glBindFramebuffer(GL_FRAMEBUFFER, defaultFBO);
-
 }
+
+// void Realtime::bindTexToFBO(GLuint &tex, GLuint &fbo) {
+//     glGenTextures(1, &tex);
+//     glBindTexture(GL_TEXTURE_2D, tex);
+//     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m_fbo_width, m_fbo_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+//     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+//     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+//     glBindTexture(GL_TEXTURE_2D, 0);
+//     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+
+// }
 
 void Realtime::setUp() {
     makeShapes();
@@ -102,7 +112,7 @@ void Realtime::setUp() {
 
     makeFBO(sceneTex, sceneRBO, sceneFBO);
     makeFBO(occTex, occRBO, occFBO);
-    // makeFBO(godraysTex, godraysRBO, godraysFBO);
+    makeFBO(godraysTex, godraysRBO, godraysFBO);
 
 
     isSetUp = true;
@@ -159,7 +169,7 @@ void Realtime::initializeGL() {
     m_texture_shader = ShaderLoader::createShaderProgram("C:/cs1230/proj5-bgitig/resources/shaders/texture.vert", "C:/cs1230/proj5-bgitig/resources/shaders/texture.frag");
     godrayShader = ShaderLoader::createShaderProgram("C:/cs1230/proj5-bgitig/resources/shaders/godrays.vert", "C:/cs1230/proj5-bgitig/resources/shaders/godrays.frag");
 
-    defaultFBO = 2;
+    defaultFBO = 4;
     std::vector<GLfloat> fullscreen_quad_data =
         { //     POSITIONS    //
             -1.f,  1.f, 0.0f, 0,1.f,
@@ -288,40 +298,53 @@ void Realtime::paintGL() {
     glClearColor(1, 1, 1, 1);
     setFBO(occFBO);
     drawShapes(true);
-    setFBO(defaultFBO);
-    paintTexture(occTex);
+    // setFBO(defaultFBO);
+    // paintTexture(occTex);
 
-    // // SCENE PASS
-    // glClearColor(0, 0, 0, 1);
-    // setFBO(sceneFBO);
-    // drawShapes(false);
+    // SCENE PASS
+    glClearColor(0, 0, 0, 1);
+    setFBO(sceneFBO);
+    drawShapes(false);
+    // setFBO(defaultFBO);
     // paintTexture(sceneTex);
 
-    // // GODRAYS PASS
+    // GODRAYS PASS
     // setFBO(godraysFBO);
-    // glUseProgram(godrayShader);
-    // glBindVertexArray(quadVAO);
+    setFBO(defaultFBO);
+    glUseProgram(godrayShader);
+    glBindVertexArray(quadVAO);
 
-    // glActiveTexture(GL_TEXTURE0);
-    // glBindTexture(GL_TEXTURE_2D, sceneTex);
-    // glUniform1i(glGetUniformLocation(godrayShader, "sceneTex"), 0);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, sceneTex);
+    glUniform1i(glGetUniformLocation(godrayShader, "sceneTex"), 0);
 
-    // glActiveTexture(GL_TEXTURE1);
-    // glBindTexture(GL_TEXTURE_2D, occTex);
-    // glUniform1i(glGetUniformLocation(godrayShader, "occTex"), 1);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, occTex);
+    glUniform1i(glGetUniformLocation(godrayShader, "occTex"), 1);
 
-    // glm::vec4 clip = m_proj * m_view * m_lightPos;
-    // glm::vec3 ndc = glm::vec3(clip) / clip.w;
-    // glm::vec2 screen = (glm::vec2(ndc) * 0.5f) + 0.5f;
+    glm::vec4 clip = m_proj * m_view * m_lightPos;
+    glm::vec3 ndc = glm::vec3(clip) / clip.w;
+    glm::vec2 screen = (glm::vec2(ndc) * 0.5f) + 0.5f;
 
-    // glUniform2f(glGetUniformLocation(godrayShader,"lightScreenPos"), screen.x, screen.y);
-    // glUniform1f(glGetUniformLocation(godrayShader,"exposure"), 0.03f);
-    // glUniform1f(glGetUniformLocation(godrayShader,"decay"), 0.95f);
-    // glUniform1f(glGetUniformLocation(godrayShader,"density"), 0.8f);
-    // glUniform1f(glGetUniformLocation(godrayShader,"weight"), 0.6f);
-    // glUniform1i(glGetUniformLocation(godrayShader,"NUM_SAMPLES"), 60);
+    glUniform2f(glGetUniformLocation(godrayShader,"lightScreenPos"), screen.x, screen.y);
+    glUniform1f(glGetUniformLocation(godrayShader,"exposure"), 0.03f);
+    glUniform1f(glGetUniformLocation(godrayShader,"decay"), 0.95f);
+    glUniform1f(glGetUniformLocation(godrayShader,"density"), 0.8f);
+    glUniform1f(glGetUniformLocation(godrayShader,"weight"), 0.6f);
+    glUniform1i(glGetUniformLocation(godrayShader,"NUM_SAMPLES"), 60);
+
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glBindVertexArray(0);
+    glUseProgram(0);
 
     // setFBO(defaultFBO);
+
+    // glDrawArrays(GL_TRIANGLES, 0, 6);
+    // glBindTexture(GL_TEXTURE_2D, 0);
+    // glBindVertexArray(0);
+    // glUseProgram(0);
+    // glViewport(0,0,m_fbo_width*2, m_fbo_height*2);
     // paintTexture(godraysTex);
 }
 

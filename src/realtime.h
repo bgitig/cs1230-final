@@ -121,7 +121,7 @@ private:
     float  m_angleY;
     float  m_zoom;
 
-    GLuint m_defaultFBO;
+    GLuint defaultFBO;
     int m_fbo_width;
     int m_fbo_height;
     int m_screen_width;
