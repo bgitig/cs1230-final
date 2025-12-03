@@ -74,7 +74,7 @@ private:
     std::unordered_map<Qt::Key, bool> m_keyMap;         // Stores whether keys are pressed or not
 
     // Device Correction Variables
-    double m_devicePixelRatio;
+    float m_devicePixelRatio;
 
     GLuint m_shader;
 

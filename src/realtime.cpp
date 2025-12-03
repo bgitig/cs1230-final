@@ -310,6 +310,7 @@ void Realtime::paintGL() {
 
     // GODRAYS PASS
     // setFBO(godraysFBO);
+
     setFBO(defaultFBO);
     glUseProgram(godrayShader);
     glBindVertexArray(quadVAO);
@@ -325,7 +326,6 @@ void Realtime::paintGL() {
     glm::vec4 clip = m_proj * m_view * m_lightPos;
     glm::vec3 ndc = glm::vec3(clip) / clip.w;
     glm::vec2 screen = (glm::vec2(ndc) * 0.5f) + 0.5f;
-
     glUniform2f(glGetUniformLocation(godrayShader,"lightScreenPos"), screen.x, screen.y);
     glUniform1f(glGetUniformLocation(godrayShader,"exposure"), 0.03f);
     glUniform1f(glGetUniformLocation(godrayShader,"decay"), 0.95f);
@@ -339,13 +339,8 @@ void Realtime::paintGL() {
     glUseProgram(0);
 
     // setFBO(defaultFBO);
-
-    // glDrawArrays(GL_TRIANGLES, 0, 6);
-    // glBindTexture(GL_TEXTURE_2D, 0);
-    // glBindVertexArray(0);
-    // glUseProgram(0);
-    // glViewport(0,0,m_fbo_width*2, m_fbo_height*2);
     // paintTexture(godraysTex);
+
 }
 
 void Realtime::resizeGL(int w, int h) {

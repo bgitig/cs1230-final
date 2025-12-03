@@ -15,11 +15,12 @@ uniform int NUM_SAMPLES;
 in vec2 uv;
 
 void main() {
-    fragColor = texture(sceneTex, uv*.5f);
-    vec3 scene = texture(sceneTex, uv*.5f).rgb;
+    // fragColor = vec4(uv.x, uv.y, 0, 1);
+    fragColor = texture(sceneTex, uv);
+    vec3 scene = texture(sceneTex, uv).rgb;
 
-    vec2 delta = (lightScreenPos - uv*.5f) * density / float(NUM_SAMPLES);
-    vec2 coord = uv*.5f;
+    vec2 delta = (lightScreenPos - uv) * density / float(NUM_SAMPLES);
+    vec2 coord = uv;
 
     float illuminationDecay = 1.0;
     vec3 color = vec3(0.0);
