@@ -60,6 +60,9 @@ private:
     void updateCamera();
     void updateLights();
 
+    void makeFBO(GLuint &tex, GLuint &rbo, GLuint &fboo);
+    void setFBO(GLuint fbo);
+
     // Tick Related Variables
     int m_timer;                                        // Stores timer which attempts to run ~60 times per second
     QElapsedTimer m_elapsedTimer;                       // Stores timer which keeps track of actual time between frames
@@ -116,4 +119,10 @@ private:
     float  m_angleX;
     float  m_angleY;
     float  m_zoom;
+
+    GLuint defaultFBO;
+    GLuint sceneFBO, sceneRBO, sceneTex;
+    GLuint bloomFBO, bloomRBO, bloomTex;
+    GLuint m_fullscreen_vao, m_fullscreen_vbo;
+    GLuint bloomShader;
 };
