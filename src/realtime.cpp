@@ -298,19 +298,16 @@ void Realtime::paintGL() {
     glClearColor(1, 1, 1, 1);
     setFBO(occFBO);
     drawShapes(true);
-    // setFBO(defaultFBO);
-    // paintTexture(occTex);
 
     // SCENE PASS
     glClearColor(0, 0, 0, 1);
     setFBO(sceneFBO);
     drawShapes(false);
-    // setFBO(defaultFBO);
-    // paintTexture(sceneTex);
 
     // GODRAYS PASS
     // setFBO(godraysFBO);
-
+    // To avoid duplicate VAO calls, essentiall just do the paintTexture functiionality for only this composite
+    // godray texture in paintGL itself
     setFBO(defaultFBO);
     glUseProgram(godrayShader);
     glBindVertexArray(quadVAO);
@@ -337,10 +334,6 @@ void Realtime::paintGL() {
     glBindTexture(GL_TEXTURE_2D, 0);
     glBindVertexArray(0);
     glUseProgram(0);
-
-    // setFBO(defaultFBO);
-    // paintTexture(godraysTex);
-
 }
 
 void Realtime::resizeGL(int w, int h) {
