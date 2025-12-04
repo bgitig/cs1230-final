@@ -1,7 +1,37 @@
-uniform sampler2D qt_Texture0;
-varying vec4 qt_TexCoord0;
+#version 330 core
 
-void main(void)
+in vec2 TexCoords;
+
+uniform sampler2D image;
+
+uniform bool horizontal;
+uniform float weight[10] = float[](
+    0.196482, 0.176032, 0.121003, 0.065984,
+    0.028288, 0.009304, 0.002216, 0.000387,
+    0.000051, 0.000005
+);
+out vec4 fragColor;
+
+void main()
 {
-    gl_FragColor = texture2D(qt_Texture0, qt_TexCoord0.st);
+    vec2 tex_offset = 2.0 / textureSize(image, 0); // gets size of single texel
+    vec3 result = texture(image, TexCoords).rgb * weight[0]; // current fragment's contribution
+    if(horizontal)
+    {
+        for(int i = 1; i < 10; ++i)
+        {
+            result += texture(image, TexCoords + vec2(tex_offset.x * i, 0.0)).rgb * weight[i];
+            result += texture(image, TexCoords - vec2(tex_offset.x * i, 0.0)).rgb * weight[i];
+        }
+    }
+    else
+    {
+        for(int i = 1; i < 10; ++i)
+        {
+            result += texture(image, TexCoords + vec2(0.0, tex_offset.y * i)).rgb * weight[i];
+            result += texture(image, TexCoords - vec2(0.0, tex_offset.y * i)).rgb * weight[i];
+        }
+    }
+    fragColor = vec4(result, 1.0);
+
 }

@@ -55,10 +55,12 @@ add_subdirectory(glm)
 # GLEW: this creates its library and allows you to `#include "GL/glew.h"`
 add_library(StaticGLEW STATIC glew/src/glew.c
     src/utils/camera.h src/utils/camera.cpp
+    resources/shaders/texture.frag
+    resources/shaders/texture.vert
     resources/shaders/bloom.frag
     resources/shaders/bloom.vert
-    resources/shaders/blend.frag
-    resources/shaders/blend.vert)
+    resources/shaders/blend.vert
+    resources/shaders/blend.frag)
 include_directories(${PROJECT_NAME} PRIVATE glew/include)
 
 # Specifies libraries to be linked (Qt components, glew, etc)

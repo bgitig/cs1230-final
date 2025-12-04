@@ -91,14 +91,74 @@ void Realtime::makeFBO(GLuint &tex, GLuint &rbo, GLuint &fbo) {
     glBindFramebuffer(GL_FRAMEBUFFER, defaultFBO);
 }
 
+// void Realtime::makeTwoTexFBO(GLuint &tex, GLuint &fbo) {
+//     glGenFramebuffers(1, &fbo);
+//     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+//     glGenTextures(2, tex);
+//     for (int i = 0; i < 2; i++)
+//     {
+//         glBindTexture(GL_TEXTURE_2D, tex[i]);
+//         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m_fbo_width, m_fbo_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+//         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+//         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+//         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + i, GL_TEXTURE_2D, tex[i], 0);
+//     }
+//     unsigned int attachments[2] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
+//     glDrawBuffers(2, attachments);
+// }
+
 void Realtime::setUp() {
     makeShapes();
     setUpBindings(m_sphere_data, m_sphere_vbo, m_sphere_vao);
     setUpBindings(m_cone_data, m_cone_vbo, m_cone_vao);
     setUpBindings(m_cube_data, m_cube_vbo, m_cube_vao);
     setUpBindings(m_cylinder_data, m_cylinder_vbo, m_cylinder_vao);
-    makeFBO(sceneTex, sceneRBO, sceneFBO);
-    makeFBO(bloomTex, bloomRBO, bloomFBO);
+
+    // making FBO with 2 texture slots so that we only need to do one render pass
+    glGenFramebuffers(1, &hdrFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, hdrFBO);
+    glGenTextures(2, hdrTex);
+    for (int i = 0; i < 2; i++)
+    {
+        glBindTexture(GL_TEXTURE_2D, hdrTex[i]);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, m_fbo_width, m_fbo_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + i, GL_TEXTURE_2D, hdrTex[i], 0);
+    }
+    attachments[0] = GL_COLOR_ATTACHMENT0;
+    attachments[1] = GL_COLOR_ATTACHMENT1;
+    glDrawBuffers(2, attachments);
+    glBindFramebuffer(GL_FRAMEBUFFER, defaultFBO);
+
+    // makeTwoTexFBO(hdrTex, hdrFBO);
+
+    glGenFramebuffers(2, bloomFBO);
+    glGenTextures(2, bloomTex);
+    for (int i = 0; i < 2; i++)
+    {
+        glBindFramebuffer(GL_FRAMEBUFFER, bloomFBO[i]);
+        glBindTexture(GL_TEXTURE_2D, bloomTex[i]);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, m_fbo_width, m_fbo_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+        // GLuint bloomDepth;
+        // glGenRenderbuffers(1, &bloomDepth);
+        // glBindRenderbuffer(GL_RENDERBUFFER, bloomDepth);
+        // glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, m_fbo_width, m_fbo_height);
+
+        // glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, bloomDepth);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, bloomTex[i], 0);
+        glBindFramebuffer(GL_FRAMEBUFFER, defaultFBO);
+    }
+    // makeFBO(bloomTex1, bloomRBO1, bloomFBO1);
+    // makeFBO(bloomTex2, bloomRBO2, bloomFBO2);
+
     isSetUp = true;
 }
 
@@ -123,6 +183,12 @@ void Realtime::finish() {
 
 void Realtime::initializeGL() {
     m_devicePixelRatio = this->devicePixelRatio();
+    m_screen_width = size().width() * m_devicePixelRatio;
+    m_screen_height = size().height() * m_devicePixelRatio;
+    m_fbo_width = m_screen_width;
+    m_fbo_height = m_screen_height;
+
+    defaultFBO = 4;
 
     m_timer = startTimer(1000/60);
     m_elapsedTimer.start();
@@ -142,21 +208,15 @@ void Realtime::initializeGL() {
     glEnable(GL_CULL_FACE);
     // Tells OpenGL how big the screen is
     glViewport(0, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio);
-
+    
     std::vector<GLfloat> fullscreen_quad_data =
         { //     POSITIONS    //
-            -1.f,  1.f, 0.0f,
-            0,1.f,
-            -1.f, -1.f, 0.0f,
-            0,0,
-            1.f, -1.f, 0.0f,
-            1.f,0,
-            1.f,  1.f, 0.0f,
-            1.f,1.f,
-            -1.f,  1.f, 0.0f,
-            0,1.f,
-            1.f, -1.f, 0.0f,
-            1.f,0
+            -1.f,  1.f, 0.0f, 0,1.f,
+            -1.f, -1.f, 0.0f, 0,0,
+            1.f, -1.f, 0.0f, 1.f,0,
+            1.f,  1.f, 0.0f, 1.f,1.f,
+            -1.f,  1.f, 0.0f, 0,1.f,
+            1.f, -1.f, 0.0f, 1.f,0
         };
 
     glGenBuffers(1, &m_fullscreen_vbo);
@@ -164,20 +224,23 @@ void Realtime::initializeGL() {
     glBufferData(GL_ARRAY_BUFFER, fullscreen_quad_data.size()*sizeof(GLfloat), fullscreen_quad_data.data(), GL_STATIC_DRAW);
     glGenVertexArrays(1, &m_fullscreen_vao);
     glBindVertexArray(m_fullscreen_vao);
-
+    
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(GLfloat), reinterpret_cast<void*>(0));
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), reinterpret_cast<void*>(0));
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(GLfloat), reinterpret_cast<void*>(sizeof(GLfloat)*3));
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), reinterpret_cast<void*>(sizeof(GLfloat)*3));
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
 
-    defaultFBO = 3;
 
     // Students: anything requiring OpenGL calls when the program starts should be done here
     glClearColor(0,0,0,1);
     m_shader = ShaderLoader::createShaderProgram(":/resources/shaders/default.vert", ":/resources/shaders/default.frag");
-    bloomShader = ShaderLoader::createShaderProgram(":/resources/shaders/bloom.vert", ":/resources/shaders/bloom.frag");
+    bloomShader = ShaderLoader::createShaderProgram("C:/cs1230/proj5-bgitig/resources/shaders/bloom.vert", "C:/cs1230/proj5-bgitig/resources/shaders/bloom.frag");
+    blendShader = ShaderLoader::createShaderProgram("C:/cs1230/proj5-bgitig/resources/shaders/blend.vert", "C:/cs1230/proj5-bgitig/resources/shaders/blend.frag");
+
+    m_texture_shader = ShaderLoader::createShaderProgram("C:/cs1230/proj5-bgitig/resources/shaders/texture.vert", "C:/cs1230/proj5-bgitig/resources/shaders/texture.frag");
+
 
     setUp();
 }
@@ -213,12 +276,8 @@ GLsizei Realtime::typeInterpretVertices(PrimitiveType type) {
 }
 
 
-
-void Realtime::paintGL() {
-    // Students: anything requiring OpenGL calls every frame should be done here
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+void Realtime::drawShapes(bool occlusion) {
     glUseProgram(m_shader);
-
     for (RenderShapeData shape : renderData.shapes) {
         glBindVertexArray(typeInterpretVao(shape.primitive.type));
 
@@ -256,11 +315,88 @@ void Realtime::paintGL() {
         GLint cReflectivelocation = glGetUniformLocation(m_shader, "m_cReflective");
         glUniform4f(cReflectivelocation, material.cReflective.x, material.cReflective.y, material.cReflective.z, material.cReflective.w);
 
+        GLint occ_location = glGetUniformLocation(m_shader, "occ");
+        glUniform1f(occ_location, occlusion);
+
         glDrawArrays(GL_TRIANGLES, 0, typeInterpretVertices(shape.primitive.type));
-        glBindVertexArray(0);
+    }
+    glUseProgram(0);
+}
+
+void Realtime::paintTexture(GLuint texture) {
+    glUseProgram(m_texture_shader);
+    glBindVertexArray(m_fullscreen_vao);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, texture);
+
+    GLint tex_location = glGetUniformLocation(m_texture_shader, "sampler");
+    glUniform1i(tex_location, 0);
+
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glBindVertexArray(0);
+    glUseProgram(0);
+}
+
+void Realtime::setFBO(GLuint fbo) {
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glViewport(0, 0, m_fbo_width, m_fbo_height);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+}
+
+void Realtime::paintGL() {
+    // SCENE + HDR PASS
+    glClearColor(0, 0, 0, 1);
+    setFBO(hdrFBO);
+    drawShapes(false);
+
+    // BLOOM BLUR PASS
+
+    bool horizontal = true;
+    bool first = true;
+    int amount = 10;
+    glUseProgram(bloomShader);
+    for (int i = 0; i < amount; i++) {
+        glBindFramebuffer(GL_FRAMEBUFFER, bloomFBO[horizontal]);
+
+        glUniform1i(glGetUniformLocation(bloomShader, "horizontal"), horizontal);
+        glBindVertexArray(m_fullscreen_vao);
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, first ? hdrTex[1] : bloomTex[!horizontal]);
+        glUniform1i(glGetUniformLocation(bloomShader, "image"), 0);
+
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+
+        horizontal = !horizontal;
+        if (first) {
+            first = false;
+        }
     }
 
+    setFBO(defaultFBO);
+    glUseProgram(blendShader);
+
+    glBindVertexArray(m_fullscreen_vao);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, hdrTex[0]);
+    glUniform1i(glGetUniformLocation(bloomShader, "scene"), 0);
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, bloomTex[0]);
+    glUniform1i(glGetUniformLocation(bloomShader, "bloom"), 1);
+    // glDrawArrays(GL_TRIANGLES, 0, 6);
+
+    paintTexture(bloomTex[0]);
+    // paintTexture(hdrTex[0]);
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glBindVertexArray(0);
     glUseProgram(0);
+
+
 }
 
 void Realtime::resizeGL(int w, int h) {

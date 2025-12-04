@@ -1,10 +1,14 @@
-attribute vec4 qt_Vertex;
-attribute vec4 qt_MultiTexCoord0;
-uniform mat4 qt_ModelViewProjectionMatrix;
-varying vec4 qt_TexCoord0;
+#version 330 core
 
-void main(void)
-{
-    gl_Position = qt_ModelViewProjectionMatrix * qt_Vertex;
-    qt_TexCoord0 = qt_MultiTexCoord0;
+// Task 15: add a second layout variable representing a UV coordinate
+layout (location = 0) in vec3 position;
+layout (location = 1) in vec2 uv;
+
+// Task 16: create an "out" variable representing a UV coordinate
+out vec2 TexCoords;
+
+void main() {
+    // Task 16: assign the UV layout variable to the UV "out" variable
+    TexCoords = uv.xy;
+    gl_Position = vec4(position, 1.0);
 }

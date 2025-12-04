@@ -1,7 +1,24 @@
-uniform sampler2D qt_Texture0;
-varying vec4 qt_TexCoord0;
 
-void main(void)
+#version 330 core
+out vec4 FragColor;
+
+in vec2 TexCoords;
+
+uniform sampler2D scene;
+uniform sampler2D bloom;
+
+void main()
 {
-    gl_FragColor = texture2D(qt_Texture0, qt_TexCoord0.st);
+    // const float exposure = .5;
+    // const float gamma = 2.2;
+
+    vec3 hdrColor = texture(scene, TexCoords).rgb;
+    vec3 bloomColor = texture(bloom, TexCoords).rgb;
+
+    // vec3 color = hdrColor + bloomColor;
+    // vec3 result = vec3(1.0) - exp(-color * exposure);
+    // result = pow(result, vec3(1.0 / gamma));
+    // FragColor = vec4(result, 1.0);
+    FragColor = vec4(max(hdrColor, bloomColor), 1);
+
 }

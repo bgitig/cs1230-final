@@ -60,8 +60,11 @@ private:
     void updateCamera();
     void updateLights();
 
-    void makeFBO(GLuint &tex, GLuint &rbo, GLuint &fboo);
+    void makeTwoTexFBO(GLuint &tex, GLuint &fbo);
+    void makeFBO(GLuint &tex, GLuint &rbo, GLuint &fbo);
     void setFBO(GLuint fbo);
+    void drawShapes(bool occlusion);
+    void paintTexture(GLuint texture);
 
     // Tick Related Variables
     int m_timer;                                        // Stores timer which attempts to run ~60 times per second
@@ -121,8 +124,13 @@ private:
     float  m_zoom;
 
     GLuint defaultFBO;
-    GLuint sceneFBO, sceneRBO, sceneTex;
-    GLuint bloomFBO, bloomRBO, bloomTex;
+    GLuint hdrFBO, hdrTex[2], attachments[2];
+    GLuint bloomTex[2], bloomFBO[2];
+
     GLuint m_fullscreen_vao, m_fullscreen_vbo;
-    GLuint bloomShader;
+    int m_fbo_width;
+    int m_fbo_height;
+    int m_screen_width;
+    int m_screen_height;
+    GLuint bloomShader, blendShader, m_texture_shader;
 };
