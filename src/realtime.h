@@ -126,6 +126,7 @@ private:
     GLuint defaultFBO;
     GLuint hdrFBO, hdrTex[2], attachments[2];
     GLuint bloomTex[2], bloomFBO[2];
+    float exposure;
 
     GLuint m_fullscreen_vao, m_fullscreen_vbo;
     int m_fbo_width;

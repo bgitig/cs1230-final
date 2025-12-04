@@ -127,7 +127,9 @@ void Realtime::setUp() {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + i, GL_TEXTURE_2D, hdrTex[i], 0);
+        glBindTexture(GL_TEXTURE_2D, 0);
     }
+
     attachments[0] = GL_COLOR_ATTACHMENT0;
     attachments[1] = GL_COLOR_ATTACHMENT1;
     glDrawBuffers(2, attachments);
@@ -147,18 +149,10 @@ void Realtime::setUp() {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-        // GLuint bloomDepth;
-        // glGenRenderbuffers(1, &bloomDepth);
-        // glBindRenderbuffer(GL_RENDERBUFFER, bloomDepth);
-        // glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, m_fbo_width, m_fbo_height);
-
-        // glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, bloomDepth);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, bloomTex[i], 0);
         glBindFramebuffer(GL_FRAMEBUFFER, defaultFBO);
+        glBindTexture(GL_TEXTURE_2D, 0);
     }
-    // makeFBO(bloomTex1, bloomRBO1, bloomFBO1);
-    // makeFBO(bloomTex2, bloomRBO2, bloomFBO2);
-
     isSetUp = true;
 }
 
@@ -238,9 +232,8 @@ void Realtime::initializeGL() {
     m_shader = ShaderLoader::createShaderProgram(":/resources/shaders/default.vert", ":/resources/shaders/default.frag");
     bloomShader = ShaderLoader::createShaderProgram("C:/cs1230/proj5-bgitig/resources/shaders/bloom.vert", "C:/cs1230/proj5-bgitig/resources/shaders/bloom.frag");
     blendShader = ShaderLoader::createShaderProgram("C:/cs1230/proj5-bgitig/resources/shaders/blend.vert", "C:/cs1230/proj5-bgitig/resources/shaders/blend.frag");
-
     m_texture_shader = ShaderLoader::createShaderProgram("C:/cs1230/proj5-bgitig/resources/shaders/texture.vert", "C:/cs1230/proj5-bgitig/resources/shaders/texture.frag");
-
+    exposure = .5;
 
     setUp();
 }
@@ -373,6 +366,7 @@ void Realtime::paintGL() {
         if (first) {
             first = false;
         }
+        glBindTexture(GL_TEXTURE_2D, 0);
     }
 
     setFBO(defaultFBO);
@@ -381,15 +375,18 @@ void Realtime::paintGL() {
     glBindVertexArray(m_fullscreen_vao);
 
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, hdrTex[0]);
-    glUniform1i(glGetUniformLocation(bloomShader, "scene"), 0);
+    glBindTexture(GL_TEXTURE_2D, bloomTex[!horizontal]);
+    glUniform1i(glGetUniformLocation(blendShader, "bloom"), 0);
 
     glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, bloomTex[0]);
-    glUniform1i(glGetUniformLocation(bloomShader, "bloom"), 1);
-    // glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindTexture(GL_TEXTURE_2D, hdrTex[0]);
+    glUniform1i(glGetUniformLocation(blendShader, "scene"), 1);
 
-    paintTexture(bloomTex[0]);
+    glUniform1f(glGetUniformLocation(blendShader, "exposure"), exposure);
+
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+
+    // paintTexture(bloomTex[!horizontal]);
     // paintTexture(hdrTex[0]);
 
     glBindTexture(GL_TEXTURE_2D, 0);
