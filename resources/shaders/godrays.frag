@@ -15,8 +15,6 @@ uniform int NUM_SAMPLES;
 in vec2 uv;
 
 void main() {
-    // fragColor = vec4(uv.x, uv.y, 0, 1);
-    fragColor = texture(sceneTex, uv);
     vec3 scene = texture(sceneTex, uv).rgb;
 
     vec2 delta = (lightScreenPos - uv) * density / float(NUM_SAMPLES);
@@ -36,4 +34,6 @@ void main() {
     }
 
     fragColor = vec4(scene + color * exposure, 1.0);
+    // fragColor = vec4(uv.x, uv.y, 0, 1);
+
 }

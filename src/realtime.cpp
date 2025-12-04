@@ -112,7 +112,7 @@ void Realtime::setUp() {
 
     makeFBO(sceneTex, sceneRBO, sceneFBO);
     makeFBO(occTex, occRBO, occFBO);
-    makeFBO(godraysTex, godraysRBO, godraysFBO);
+    // makeFBO(godraysTex, godraysRBO, godraysFBO);
 
 
     isSetUp = true;
@@ -169,7 +169,7 @@ void Realtime::initializeGL() {
     m_texture_shader = ShaderLoader::createShaderProgram("C:/cs1230/proj5-bgitig/resources/shaders/texture.vert", "C:/cs1230/proj5-bgitig/resources/shaders/texture.frag");
     godrayShader = ShaderLoader::createShaderProgram("C:/cs1230/proj5-bgitig/resources/shaders/godrays.vert", "C:/cs1230/proj5-bgitig/resources/shaders/godrays.frag");
 
-    defaultFBO = 4;
+    defaultFBO = 3;
     std::vector<GLfloat> fullscreen_quad_data =
         { //     POSITIONS    //
             -1.f,  1.f, 0.0f, 0,1.f,
@@ -289,26 +289,33 @@ void Realtime::paintTexture(GLuint texture) {
 
 void Realtime::setFBO(GLuint fbo) {
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-    glViewport(0, 0, m_screen_width, m_screen_height);
+    glViewport(0, 0, m_fbo_width, m_fbo_height);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
 void Realtime::paintGL() {
-    // OCCLUSION PASS
-    glClearColor(1, 1, 1, 1);
-    setFBO(occFBO);
-    drawShapes(true);
-
     // SCENE PASS
     glClearColor(0, 0, 0, 1);
     setFBO(sceneFBO);
+    // glBindFramebuffer(GL_FRAMEBUFFER, sceneFBO);
+
     drawShapes(false);
 
+    // OCCLUSION PASS
+    glClearColor(0, 0, 0, 1);
+    setFBO(occFBO);
+    // glBindFramebuffer(GL_FRAMEBUFFER, occFBO);
+
+    drawShapes(true);
+
     // GODRAYS PASS
-    // setFBO(godraysFBO);
-    // To avoid duplicate VAO calls, essentiall just do the paintTexture functiionality for only this composite
-    // godray texture in paintGL itself
-    setFBO(defaultFBO);
+
+    glClearColor(0, 0, 0, 1);
+    // setFBO(defaultFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, defaultFBO);
+    glViewport(0, 0, size().width()*2.f*m_devicePixelRatio,size().height()*2.f*m_devicePixelRatio);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
     glUseProgram(godrayShader);
     glBindVertexArray(quadVAO);
 
@@ -326,11 +333,14 @@ void Realtime::paintGL() {
     glUniform2f(glGetUniformLocation(godrayShader,"lightScreenPos"), screen.x, screen.y);
     glUniform1f(glGetUniformLocation(godrayShader,"exposure"), 0.03f);
     glUniform1f(glGetUniformLocation(godrayShader,"decay"), 0.95f);
-    glUniform1f(glGetUniformLocation(godrayShader,"density"), 0.8f);
-    glUniform1f(glGetUniformLocation(godrayShader,"weight"), 0.6f);
-    glUniform1i(glGetUniformLocation(godrayShader,"NUM_SAMPLES"), 60);
+    glUniform1f(glGetUniformLocation(godrayShader,"density"), 1.2f);
+    glUniform1f(glGetUniformLocation(godrayShader,"weight"), .75f);
+    glUniform1i(glGetUniformLocation(godrayShader,"NUM_SAMPLES"), 200);
 
     glDrawArrays(GL_TRIANGLES, 0, 6);
+    // paintTexture(sceneTex);
+    // paintTexture(occTex);
+
     glBindTexture(GL_TEXTURE_2D, 0);
     glBindVertexArray(0);
     glUseProgram(0);
