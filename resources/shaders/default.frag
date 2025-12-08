@@ -1,78 +1,195 @@
 #version 330 core
 
-in vec3 position;
-in vec3 normal;
+out vec4 FragColor;
 
-out vec4 fragColor;
+in vec3 FragPos;
+in vec3 Normal;
+in vec4 FragPosLightSpace;
 
-uniform mat4 m_model;
+struct Light {
+    int type;
+    vec4 color;
+    vec3 function;
+    vec4 pos;
+    vec4 dir;
+    float penumbra;
+    float angle;
+};
+
+uniform vec3 cameraPos;
+uniform int numLights;
+uniform Light lights[20];
 
 uniform float m_ka;
 uniform float m_kd;
 uniform float m_ks;
-
-uniform float m_shininess;
 uniform vec4 m_cAmbient;
 uniform vec4 m_cDiffuse;
 uniform vec4 m_cSpecular;
-uniform vec4 m_cReflective;
+uniform float shininess;
 
-uniform int m_lightType[8];
-uniform vec4 m_lightColor[8];
-uniform vec3 m_lightFunction[8];
-uniform vec4 m_lightPos[8];
-uniform vec4 m_lightDir[8];
-uniform float m_lightPenumbra[8];
-uniform float m_lightAngle[8];
-uniform float directionToLight[8];
+// shadows!!
+uniform sampler2D shadowMap;
 
-uniform vec4 camera_pos;
+// yet again, shadows
+float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir) {
+    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
 
-uniform int numLights;
+    // transform range
+    projCoords = projCoords * 0.5 + 0.5;
+
+    if(projCoords.z > 1.0)
+        return 0.0;
+
+    // check if we're outside the shadow map bounds
+    if(projCoords.x < 0.0 || projCoords.x > 1.0 ||
+       projCoords.y < 0.0 || projCoords.y > 1.0)
+        return 0.0;
+
+    // get depth from light
+    float currentDepth = projCoords.z;
+    // bias
+    float bias = max(0.05 * (1.0 - dot(normal, lightDir)), 0.005);
+
+    // an "attempt" at PCF
+    float shadow = 0.0;
+    vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
+    for(int x = -1; x <= 1; ++x) {
+        for(int y = -1; y <= 1; ++y){
+            // sample shadow map
+            float pcfDepth = texture(shadowMap, projCoords.xy + vec2(x, y) * texelSize).r;
+            // compare depths
+            shadow += currentDepth - bias > pcfDepth ? 1.0 : 0.0;
+        }
+    }
+    shadow /= 9.0; // average the samples
+
+    return shadow;
+}
+
+vec3 calculatePointLight(Light light, vec3 normal, vec3 fragPos, vec3 viewDir) {
+    vec3 lightDir = normalize(light.pos.xyz - fragPos);
+
+    // diffuse
+    float diff = max(dot(normal, lightDir), 0.0);
+
+    // specular
+    vec3 reflectDir = reflect(-lightDir, normal);
+    float spec = pow(max(dot(viewDir, reflectDir), 0.0), shininess);
+
+    // f-att
+    float distance = length(light.pos.xyz - fragPos);
+    float attenuation = 1.0 / (light.function.x + light.function.y * distance + light.function.z * (distance * distance));
+
+    // accumulation
+    vec3 ambient = m_ka * m_cAmbient.rgb * light.color.rgb;
+    vec3 diffuse = m_kd * m_cDiffuse.rgb * diff * light.color.rgb;
+    vec3 specular = m_ks * m_cSpecular.rgb * spec * light.color.rgb;
+
+    ambient *= attenuation;
+    diffuse *= attenuation;
+    specular *= attenuation;
+
+    return ambient + diffuse + specular;
+}
+
+vec3 calculateDirectionalLight(Light light, vec3 normal, vec3 viewDir, float shadow) {
+    vec3 lightDir = normalize(-light.dir.xyz);
+
+    // diffuse
+    float diff = max(dot(normal, lightDir), 0.0);
+
+    // specular
+    vec3 reflectDir = reflect(-lightDir, normal);
+    float spec = pow(max(dot(viewDir, reflectDir), 0.0), shininess);
+
+    // accumulation
+    vec3 ambient = m_ka * m_cAmbient.rgb * light.color.rgb;
+    vec3 diffuse = m_kd * m_cDiffuse.rgb * diff * light.color.rgb;
+    vec3 specular = m_ks * m_cSpecular.rgb * spec * light.color.rgb;
+
+    // shadow time!
+    diffuse *= (1.0 - shadow);
+    specular *= (1.0 - shadow);
+    // no ambient effect
+
+    return ambient + diffuse + specular;
+}
+
+vec3 calculateSpotLight(Light light, vec3 normal, vec3 fragPos, vec3 viewDir) {
+    vec3 lightDir = normalize(light.pos.xyz - fragPos);
+    vec3 spotDir = normalize(-light.dir.xyz);
+    float theta = dot(lightDir, spotDir);
+
+
+    float outerCutoff = cos(light.angle);
+    float innerCutoff = cos(light.angle * 0.8);
+
+    float intensity = 0.0;
+    if(theta > outerCutoff) {
+        if(theta > innerCutoff) {
+            intensity = 1.0;
+        } else {
+            intensity = (theta - outerCutoff) / (innerCutoff - outerCutoff);
+        }
+    }
+
+    if(intensity > 0.0) {
+        // diffuse
+        float diff = max(dot(normal, lightDir), 0.0);
+
+        // specular
+        vec3 reflectDir = reflect(-lightDir, normal);
+        float spec = pow(max(dot(viewDir, reflectDir), 0.0), shininess);
+
+        // f-att
+        float distance = length(light.pos.xyz - fragPos);
+        float attenuation = 1.0 / (light.function.x + light.function.y * distance +
+                                  light.function.z * (distance * distance));
+
+        // accumulate
+        vec3 ambient = m_ka * m_cAmbient.rgb * light.color.rgb;
+        vec3 diffuse = m_kd * m_cDiffuse.rgb * diff * light.color.rgb;
+        vec3 specular = m_ks * m_cSpecular.rgb * spec * light.color.rgb;
+
+        ambient *= attenuation * intensity;
+        diffuse *= attenuation * intensity;
+        specular *= attenuation * intensity;
+
+        return ambient + diffuse + specular;
+    }
+
+    return vec3(0.0);
+}
 
 void main() {
-   fragColor = vec4(0,0,0,1);
+    vec3 norm = normalize(Normal);
+        vec3 viewDir = normalize(cameraPos - FragPos);
 
-   fragColor += m_ka * m_cAmbient;
+        // Test 1: Just show normals
+        // FragColor = vec4(norm * 0.5 + 0.5, 1.0);
 
-   for (int i = 0; i < numLights; i++) {
-      vec4 intensity = m_lightColor[i];
-      int type = m_lightType[i];
+        // Test 2: Simple diffuse lighting (hardcoded light)
+        vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
+        float diff = max(dot(norm, lightDir), 0.0);
+        vec3 color = vec3(1.0, 0.0, 0.0) * diff + vec3(0.1, 0.1, 0.1); // red with ambient
 
-      vec3 lightPos = vec3(m_lightPos[i]);
-      vec3 directionToLight = type == 1 ? normalize(vec3(-m_lightDir[i])) : normalize(vec3(lightPos)-position);
-      float distance = length(lightPos-position);
+        // Test 3: Check if lights array has data
+        if (numLights > 0) {
+            // At least one light exists
+            if (lights[0].type == 1) { // directional
+                vec3 lightDir = normalize(-lights[0].dir.xyz);
+                float diff = max(dot(norm, lightDir), 0.0);
+                color = m_cDiffuse.rgb * diff * lights[0].color.rgb;
+            } else if (lights[0].type == 0) { // point
+                vec3 lightDir = normalize(lights[0].pos.xyz - FragPos);
+                float diff = max(dot(norm, lightDir), 0.0);
+                color = m_cDiffuse.rgb * diff * lights[0].color.rgb;
+            }
+        } else {
+            // No lights - show blue
+            color = vec3(0.0, 0.0, 1.0);
+        }
 
-      // spot
-      if (type == 2) {
-         float theta_o = m_lightAngle[i];
-         float theta_i = theta_o - m_lightPenumbra[i];
-         float x = acos(clamp(dot(directionToLight, normalize(vec3(-m_lightDir[i]))), -1.0f, 1.0f));
-         if (x > theta_i && x <= theta_o) {
-            float falloff = (x-theta_i)/(theta_o-theta_i);
-            float falloff2 = -2*pow(falloff,3)+3*pow(falloff,2);
-            intensity *= (1-falloff2);
-         }
-         else if (x < theta_i) {
-            intensity = intensity;;
-         }
-         else {
-            intensity = vec4(0);
-         }
-      }
-
-      float attn = type == 1 ? 1 : 1/(m_lightFunction[i].x+distance*m_lightFunction[i].y+distance*distance*m_lightFunction[i].z);
-      float fatt = min(1.0f, attn);
-      vec4 coef = fatt * intensity;
-
-      vec3 N = normalize(normal);
-      float diffuse = clamp(dot(N, directionToLight), 0.0f, 1.0f);
-      fragColor += coef * m_kd * m_cDiffuse * diffuse;
-
-      vec3 R = reflect(-directionToLight,N);
-      vec3 E = normalize(camera_pos.xyz-position);
-      float x = clamp(dot(R,E), 0.0f, 1.0f);
-      float specular = x <= 0 ? 0 : m_shininess <= 0 ? 0 : pow(x, m_shininess);
-      fragColor += coef * m_ks * m_cSpecular * specular;
-   }
+        FragColor = vec4(color, 1.0);
 }

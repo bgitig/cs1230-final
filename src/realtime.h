@@ -1,119 +1,198 @@
 #pragma once
 
-// Defined before including GLEW to suppress deprecation messages on macOS
 #ifdef __APPLE__
 #define GL_SILENCE_DEPRECATION
 #endif
 #include <GL/glew.h>
 #include <glm/glm.hpp>
 
-#include <unordered_map>
 #include <QElapsedTimer>
 #include <QOpenGLWidget>
 #include <QTime>
 #include <QTimer>
-
-#include "utils/camera.h"
-#include "utils/scenedata.h"
+#include <QOpenGLBuffer>
+#include <QOpenGLVertexArrayObject>
+#include <QMatrix4x4>
+#include <QOpenGLShaderProgram>
+#include <unordered_set>
 #include "utils/sceneparser.h"
-#include "utils/shaderloader.h"
-#include "utils/shape.h"
+#include "utils/camera.h"
 #include "utils/sphere.h"
-#include "utils/cube.h"
 #include "utils/cone.h"
+#include "utils/cube.h"
 #include "utils/cylinder.h"
+#include "utils/shaderloader.h"
+#include "terrain.h"
 
 class Realtime : public QOpenGLWidget
 {
 public:
     Realtime(QWidget *parent = nullptr);
-    void finish();                                      // Called on program exit
+    void finish();
     void sceneChanged();
     void settingsChanged();
     void saveViewportImage(std::string filePath);
+    struct TerrainCube {
+        glm::vec3 position;  // Position on terrain
+        glm::mat4 modelMatrix;  // Transformation matrix
+        float size;  // Cube size
+        glm::vec4 color;  // Cube color
+    };
 
+    std::vector<TerrainCube> m_terrainCubes;
 
 public slots:
-    void tick(QTimerEvent* event);                      // Called once per tick of m_timer
+    void tick(QTimerEvent* event);
 
 protected:
-    void initializeGL() override;                       // Called once at the start of the program
-    void paintGL() override;                            // Called whenever the OpenGL context changes or by an update() request
-    void resizeGL(int width, int height) override;      // Called when window size changes
+    void initializeGL() override;
+    void paintGL() override;
+    void resizeGL(int width, int height) override;
 
 private:
-
     void keyPressEvent(QKeyEvent *event) override;
     void keyReleaseEvent(QKeyEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void timerEvent(QTimerEvent *event) override;
+    void wheelEvent(QWheelEvent *event) override;
 
+    // Tick Related Variables
+    int m_timer;
+    QElapsedTimer m_elapsedTimer;
+
+    // Input Related Variables
+    bool m_mouseDown = false;
+    glm::vec2 m_prev_mouse_pos;
+    std::unordered_map<Qt::Key, bool> m_keyMap;
+
+    // Device Correction Variables
+    int m_devicePixelRatio;
+
+    // Original Realtime Variables
+    GLuint m_shader;
+
+    // Shape VBOs and VAOs
+    GLuint m_sphere_vbo;
+    GLuint m_sphere_vao;
+    GLuint m_cone_vbo;
+    GLuint m_cone_vao;
+    GLuint m_cube_vbo;
+    GLuint m_cube_vao;
+    GLuint m_cylinder_vbo;
+    GLuint m_cylinder_vao;
+
+    // Shape data
+    std::vector<float> m_sphere_data;
+    std::vector<float> m_cone_data;
+    std::vector<float> m_cube_data;
+    std::vector<float> m_cylinder_data;
+
+    // Setup helpers
     void bindData(std::vector<float> &shapeData, GLuint &vbo);
     void setUpBindings(std::vector<float> &shapeData, GLuint &vbo, GLuint &vao);
     void makeShapes();
     void updateShapes();
     void setUp();
+    bool isSetUp = false;
+
+    // Type interpretation
     GLuint typeInterpretVao(PrimitiveType type);
     GLsizei typeInterpretVertices(PrimitiveType type);
-    void updateCamera();
-    void updateLights();
 
-    // Tick Related Variables
-    int m_timer;                                        // Stores timer which attempts to run ~60 times per second
-    QElapsedTimer m_elapsedTimer;                       // Stores timer which keeps track of actual time between frames
-
-    // Input Related Variables
-    bool m_mouseDown = false;                           // Stores state of left mouse button
-    glm::vec2 m_prev_mouse_pos;                         // Stores mouse position
-    std::unordered_map<Qt::Key, bool> m_keyMap;         // Stores whether keys are pressed or not
-
-    // Device Correction Variables
-    double m_devicePixelRatio;
-
-    GLuint m_shader;
-
-    // camera data
-    RenderData renderData;
+    // Camera and scene
     Camera camera;
-    glm::vec4 camera_pos;
-    glm::vec3 camLook = glm::vec3(1.0f);
-    glm::vec3 camUp = glm::vec3(1.0f);
-    glm::vec4 camPos = glm::vec4(1.0f);
+    RenderData renderData;
+    glm::vec3 camLook;
+    glm::vec3 camUp;
+    glm::vec4 camPos;
 
-
-    // from lab 10
-    glm::mat4 m_model = glm::mat4(1.0f);
-    glm::mat4 m_view  = glm::mat4(1.0f);
-    glm::mat4 m_proj  = glm::mat4(1.0f);
-    glm::mat4 m_mvp = glm::mat4(1.0f);
-    glm::mat3 ictm = glm::mat3(1.0f);
-
-    // shape data
-    bool isSetUp = false;
-    GLuint m_sphere_vbo;
-    GLuint m_sphere_vao;
-    std::vector<float> m_sphere_data;
-    GLuint m_cone_vbo;
-    GLuint m_cone_vao;
-    std::vector<float> m_cone_data;
-    GLuint m_cube_vbo;
-    GLuint m_cube_vao;
-    std::vector<float> m_cube_data;
-    GLuint m_cylinder_vbo;
-    GLuint m_cylinder_vao;
-    std::vector<float> m_cylinder_data;
-
-    // lighting data
-    glm::vec4 m_lightPos;
+    glm::mat4 m_view;
+    glm::mat4 m_proj;
+    glm::mat4 m_mvp;
+    glm::mat4 m_model;
+    glm::mat3 ictm;
 
     float m_ka;
     float m_kd;
     float m_ks;
 
-    QPoint m_prevMousePos;
-    float  m_angleX;
-    float  m_angleY;
-    float  m_zoom;
+    void updateCamera();
+    void updateLights();
+
+    // Shadow mapping variables
+    GLuint m_depthMapFBO;
+    GLuint m_depthMap;
+    GLuint m_depthShader;
+    glm::mat4 m_lightSpaceMatrix;
+
+    const unsigned int SHADOW_WIDTH = 1024;
+    const unsigned int SHADOW_HEIGHT = 1024;
+
+    // Cached uniform locations for performance
+    struct UniformLocations {
+        GLint model;
+        GLint view;
+        GLint projection;
+        GLint lightSpaceMatrix;
+        GLint shadowMap;
+        GLint lightPos;
+        GLint mvp;
+        GLint ictm;
+        GLint cameraPos;
+        GLint ka;
+        GLint kd;
+        GLint ks;
+        GLint cAmbient;
+        GLint cDiffuse;
+        GLint cSpecular;
+        GLint shininess;
+        GLint cReflective;
+    } m_uniformLocs;
+
+    struct DepthUniformLocations {
+        GLint lightSpaceMatrix;
+        GLint model;
+    } m_depthUniformLocs;
+
+    void cacheUniformLocations();
+
+    // ========== TERRAIN VARIABLES ==========
+    QOpenGLShaderProgram *m_terrainProgram = nullptr;
+    QOpenGLVertexArrayObject m_terrainVao;
+    QOpenGLBuffer m_terrainVbo;
+
+    Terrain m_terrain;
+    std::vector<GLfloat> m_terrainVerts;
+
+    int m_terrainProjMatrixLoc;
+    int m_terrainMvMatrixLoc;
+    int m_terrainWireshadeLoc;
+
+    QMatrix4x4 m_terrainWorld;
+    QMatrix4x4 m_terrainCamera;
+    QMatrix4x4 m_terrainProj;
+
+    glm::mat4 m_terrainViewMatrix;
+    glm::mat4 m_terrainProjMatrix;
+    glm::mat4 m_terrainWorldMatrix;
+
+    float m_angleX;
+    float m_angleY;
+    float m_zoom;
+    int m_intersected;
+    glm::vec3 m_hitPoint;
+    QPoint m_prevMousePosQt;
+
+    int m_w;
+    int m_h;
+
+    bool m_showTerrain; // Toggle for terrain visibility
+
+    // Terrain methods
+    void initializeTerrain();
+    void rebuildTerrainMatrices();
+    void updateAffectedTiles(const std::unordered_set<int>& affectedTiles);
+    void updateAffectedTiles(float x, float y, float radius);
 };

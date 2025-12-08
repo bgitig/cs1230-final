@@ -3,7 +3,7 @@
 #include "scenedata.h"
 #include <vector>
 #include <string>
-#include <GL/glew.h>
+
 
 // Struct which contains data for a single primitive, to be used for rendering
 struct RenderShapeData {

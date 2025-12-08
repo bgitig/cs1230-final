@@ -47,6 +47,8 @@ add_executable(${PROJECT_NAME}
     src/utils/cube.h src/utils/cube.cpp
     src/utils/cone.h src/utils/cone.cpp
     src/utils/cylinder.h src/utils/cylinder.cpp
+    src/terrain.h src/terrain.cpp
+    src/mouse.h src/mouse.cpp
 )
 
 # GLM: this creates its library and allows you to `#include "glm/..."`
@@ -54,7 +56,8 @@ add_subdirectory(glm)
 
 # GLEW: this creates its library and allows you to `#include "GL/glew.h"`
 add_library(StaticGLEW STATIC glew/src/glew.c
-    src/utils/camera.h src/utils/camera.cpp)
+    src/utils/camera.h src/utils/camera.cpp
+)
 include_directories(${PROJECT_NAME} PRIVATE glew/include)
 
 # Specifies libraries to be linked (Qt components, glew, etc)
@@ -74,6 +77,10 @@ qt6_add_resources(${PROJECT_NAME} "Resources"
     FILES
         resources/shaders/default.frag
         resources/shaders/default.vert
+        resources/shaders/shadows.frag
+        resources/shaders/shadows.vert
+        resources/shaders/terrain.frag
+        resources/shaders/terrain.vert
 )
 
 # GLEW: this provides support for Windows (including 64-bit)

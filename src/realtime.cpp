@@ -6,7 +6,8 @@
 #include <iostream>
 #include "settings.h"
 #include "glm/gtc/matrix_transform.hpp"
-
+#include "mouse.h"
+#include "terrain.h"
 
 // ================== Rendering the Scene!
 
@@ -24,7 +25,16 @@ Realtime::Realtime(QWidget *parent)
     m_keyMap[Qt::Key_Control] = false;
     m_keyMap[Qt::Key_Space]   = false;
 
+    // Terrain initialization
+    m_angleX = 0;
+    m_angleY = 0;
+    m_zoom = 1.0;
+    m_intersected = 0;
+    m_showTerrain = true;
+
     // If you must use this function, do not edit anything above this
+    m_cubeSize = 0.1f;  // Default cube size
+    m_cubeColor = glm::vec4(0.8f, 0.2f, 0.2f, 1.0f);
 }
 
 void Realtime::bindData(std::vector<float> &shapeData, GLuint &vbo) {
@@ -33,20 +43,20 @@ void Realtime::bindData(std::vector<float> &shapeData, GLuint &vbo) {
 }
 
 void Realtime::setUpBindings(std::vector<float> &shapeData, GLuint &vbo, GLuint &vao) {
-        glGenBuffers(1, &vbo);
-        bindData(shapeData, vbo);
+    glGenBuffers(1, &vbo);
+    bindData(shapeData, vbo);
 
-        glGenVertexArrays(1, &vao);
-        glBindVertexArray(vao);
+    glGenVertexArrays(1, &vao);
+    glBindVertexArray(vao);
 
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 6, reinterpret_cast<void *>(0));
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 6, reinterpret_cast<void *>(0));
 
-        glEnableVertexAttribArray(1);
-        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 6, reinterpret_cast<void *>(sizeof(GLfloat)*3));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 6, reinterpret_cast<void *>(sizeof(GLfloat)*3));
 
-        glBindVertexArray(0);
-        glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
 void Realtime::makeShapes() {
@@ -93,6 +103,23 @@ void Realtime::finish() {
 
     glDeleteProgram(m_shader);
 
+    // Shadow cleanup
+    glDeleteFramebuffers(1, &m_depthMapFBO);
+    glDeleteTextures(1, &m_depthMap);
+    glDeleteProgram(m_depthShader);
+
+    // Terrain cleanup
+    if (m_terrainVao.isCreated()) {
+        m_terrainVao.destroy();
+    }
+    if (m_terrainVbo.isCreated()) {
+        m_terrainVbo.destroy();
+    }
+    if (m_terrainProgram) {
+        delete m_terrainProgram;
+        m_terrainProgram = nullptr;
+    }
+
     this->doneCurrent();
 }
 
@@ -122,6 +149,188 @@ void Realtime::initializeGL() {
     glClearColor(0,0,0,1);
     m_shader = ShaderLoader::createShaderProgram(":/resources/shaders/default.vert", ":/resources/shaders/default.frag");
     setUp();
+
+    // Shadow mapping initialization
+    glGenFramebuffers(1, &m_depthMapFBO);
+
+    glGenTextures(1, &m_depthMap);
+    glBindTexture(GL_TEXTURE_2D, m_depthMap);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT,
+                 SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+
+    float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, m_depthMapFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, m_depthMap, 0);
+    glDrawBuffer(GL_NONE);
+    glReadBuffer(GL_NONE);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        std::cerr << "ERROR: Shadow framebuffer is not complete!" << std::endl;
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    m_depthShader = ShaderLoader::createShaderProgram(
+        ":/resources/shaders/shadows.vert",
+        ":/resources/shaders/shadows.frag"
+        );
+
+    // Terrain initialization
+    initializeTerrain();
+
+    // Cache uniform locations
+    cacheUniformLocations();
+}
+
+void Realtime::cacheUniformLocations() {
+    // Cache main shader uniforms
+    glUseProgram(m_shader);
+    m_uniformLocs.model = glGetUniformLocation(m_shader, "model");
+    m_uniformLocs.view = glGetUniformLocation(m_shader, "view");
+    m_uniformLocs.projection = glGetUniformLocation(m_shader, "projection");
+    m_uniformLocs.lightSpaceMatrix = glGetUniformLocation(m_shader, "lightSpaceMatrix");
+    m_uniformLocs.shadowMap = glGetUniformLocation(m_shader, "shadowMap");
+    m_uniformLocs.lightPos = glGetUniformLocation(m_shader, "lightPos");
+    m_uniformLocs.mvp = glGetUniformLocation(m_shader, "m_mvp");
+    m_uniformLocs.ictm = glGetUniformLocation(m_shader, "ictm");
+    m_uniformLocs.cameraPos = glGetUniformLocation(m_shader, "camera_pos");
+    m_uniformLocs.ka = glGetUniformLocation(m_shader, "m_ka");
+    m_uniformLocs.kd = glGetUniformLocation(m_shader, "m_kd");
+    m_uniformLocs.ks = glGetUniformLocation(m_shader, "m_ks");
+    m_uniformLocs.cAmbient = glGetUniformLocation(m_shader, "m_cAmbient");
+    m_uniformLocs.cDiffuse = glGetUniformLocation(m_shader, "m_cDiffuse");
+    m_uniformLocs.cSpecular = glGetUniformLocation(m_shader, "m_cSpecular");
+    m_uniformLocs.shininess = glGetUniformLocation(m_shader, "m_shininess");
+    m_uniformLocs.cReflective = glGetUniformLocation(m_shader, "m_cReflective");
+    glUseProgram(0);
+
+    // Cache depth shader uniforms
+    glUseProgram(m_depthShader);
+    m_depthUniformLocs.lightSpaceMatrix = glGetUniformLocation(m_depthShader, "lightSpaceMatrix");
+    m_depthUniformLocs.model = glGetUniformLocation(m_depthShader, "model");
+    glUseProgram(0);
+}
+
+void Realtime::initializeTerrain() {
+    m_terrainProgram = new QOpenGLShaderProgram;
+    m_terrainProgram->addShaderFromSourceFile(QOpenGLShader::Vertex,":/resources/shaders/terrain.vert");
+    m_terrainProgram->addShaderFromSourceFile(QOpenGLShader::Fragment,":/resources/shaders/terrain.frag");
+    m_terrainProgram->link();
+    m_terrainProgram->bind();
+
+    m_terrainProjMatrixLoc = m_terrainProgram->uniformLocation("projMatrix");
+    m_terrainMvMatrixLoc = m_terrainProgram->uniformLocation("mvMatrix");
+    m_terrainWireshadeLoc = m_terrainProgram->uniformLocation("wireshade");
+
+    m_terrainVao.create();
+    m_terrainVao.bind();
+
+    // Generate initial terrain
+    m_terrainVerts = m_terrain.generateTerrain();
+
+    m_terrainVbo.create();
+    m_terrainVbo.bind();
+    // Use GL_DYNAMIC_DRAW since we'll be updating frequently
+    glBufferData(GL_ARRAY_BUFFER, m_terrainVerts.size() * sizeof(GLfloat),
+                 m_terrainVerts.data(), GL_DYNAMIC_DRAW);
+
+    glEnableVertexAttribArray(0);
+    glEnableVertexAttribArray(1);
+    glEnableVertexAttribArray(2);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(GLfloat),
+                          nullptr);
+
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(GLfloat),
+                          reinterpret_cast<void *>(3 * sizeof(GLfloat)));
+
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(GLfloat),
+                          reinterpret_cast<void *>(6 * sizeof(GLfloat)));
+
+    m_terrainVbo.release();
+
+    m_terrainWorld.setToIdentity();
+    m_terrainWorld.translate(QVector3D(-0.5,-0.5,0));
+
+    m_terrainCamera.setToIdentity();
+    m_terrainCamera.lookAt(QVector3D(1,1,1),QVector3D(0,0,0),QVector3D(0,0,1));
+
+    m_terrainProgram->release();
+
+    rebuildTerrainMatrices();
+}
+
+void Realtime::rebuildTerrainMatrices() {
+    m_terrainCamera.setToIdentity();
+    QMatrix4x4 rot;
+    rot.setToIdentity();
+    rot.rotate(-10 * m_angleX, QVector3D(0, 0, 1));
+    QVector3D eye = QVector3D(1, 1, 1);
+    eye = rot.map(eye);
+    rot.setToIdentity();
+    rot.rotate(-10 * m_angleY, QVector3D::crossProduct(QVector3D(0, 0, 1), eye));
+    eye = rot.map(eye);
+
+    eye = eye * m_zoom;
+
+    m_terrainCamera.lookAt(eye, QVector3D(0, 0, 0), QVector3D(0, 0, 1));
+
+    m_terrainProj.setToIdentity();
+    m_terrainProj.perspective(45.0f, 1.0 * width() / height(), 0.01f, 100.0f);
+
+    // Update transformation matrices for mouse picking
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < 4; ++j) {
+            m_terrainViewMatrix[i][j] = m_terrainCamera(j, i);
+            m_terrainProjMatrix[i][j] = m_terrainProj(j, i);
+            m_terrainWorldMatrix[i][j] = m_terrainWorld(j, i);
+        }
+    }
+}
+
+void Realtime::updateAffectedTiles(const std::unordered_set<int>& affectedTiles) {
+    if (affectedTiles.empty()) return;
+
+    for (int tileIndex : affectedTiles) {
+        int tilesPerSide = m_terrain.getTilesPerSide();
+        int tileX = tileIndex % tilesPerSide;
+        int tileY = tileIndex / tilesPerSide;
+
+        m_terrain.updateTile(tileX, tileY, m_terrainVerts);
+    }
+
+    // Use glBufferSubData for partial updates instead of reallocating
+    m_terrainVbo.bind();
+    glBufferSubData(GL_ARRAY_BUFFER, 0, m_terrainVerts.size() * sizeof(GLfloat),
+                    m_terrainVerts.data());
+    m_terrainVbo.release();
+}
+
+void Realtime::updateAffectedTiles(float x, float y, float radius) {
+    std::vector<int> affectedTiles = m_terrain.getAffectedTiles(x, y, radius);
+
+    if (affectedTiles.empty()) return;
+
+    for (int tileIndex : affectedTiles) {
+        int tilesPerSide = m_terrain.getTilesPerSide();
+        int tileX = tileIndex % tilesPerSide;
+        int tileY = tileIndex / tilesPerSide;
+
+        m_terrain.updateTile(tileX, tileY, m_terrainVerts);
+    }
+
+    // Use glBufferSubData for partial updates
+    m_terrainVbo.bind();
+    glBufferSubData(GL_ARRAY_BUFFER, 0, m_terrainVerts.size() * sizeof(GLfloat),
+                    m_terrainVerts.data());
+    m_terrainVbo.release();
 }
 
 GLuint Realtime::typeInterpretVao(PrimitiveType type) {
@@ -155,65 +364,116 @@ GLsizei Realtime::typeInterpretVertices(PrimitiveType type) {
 }
 
 void Realtime::paintGL() {
-    // Students: anything requiring OpenGL calls every frame should be done here
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    // ========== SHADOW PASS ==========
+    glm::vec3 lightPos = glm::vec3(-2.0f, 4.0f, -1.0f);
+    glm::mat4 lightProjection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, 1.0f, 7.5f);
+    glm::mat4 lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));
+    m_lightSpaceMatrix = lightProjection * lightView;
+
+    glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
+    glBindFramebuffer(GL_FRAMEBUFFER, m_depthMapFBO);
+    glClear(GL_DEPTH_BUFFER_BIT);
+    glEnable(GL_DEPTH_TEST);
+
+    glUseProgram(m_depthShader);
+
+    if (m_depthUniformLocs.lightSpaceMatrix != -1) {
+        glUniformMatrix4fv(m_depthUniformLocs.lightSpaceMatrix, 1, GL_FALSE, &m_lightSpaceMatrix[0][0]);
+    }
+
+    // Render shadow pass for shapes
+    for (const RenderShapeData& shape : renderData.shapes) {
+        if (m_depthUniformLocs.model != -1) {
+            glUniformMatrix4fv(m_depthUniformLocs.model, 1, GL_FALSE, &shape.ctm[0][0]);
+        }
+
+        glBindVertexArray(typeInterpretVao(shape.primitive.type));
+        glDrawArrays(GL_TRIANGLES, 0, typeInterpretVertices(shape.primitive.type));
+        glBindVertexArray(0);
+    }
+
+    // ========== MAIN SCENE RENDER ==========
+    glBindFramebuffer(GL_FRAMEBUFFER, defaultFramebufferObject());
+    glViewport(0, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
     glUseProgram(m_shader);
 
-    for (RenderShapeData shape : renderData.shapes) {
+    // Set view-independent uniforms once
+    if (m_uniformLocs.view != -1) glUniformMatrix4fv(m_uniformLocs.view, 1, GL_FALSE, &m_view[0][0]);
+    if (m_uniformLocs.projection != -1) glUniformMatrix4fv(m_uniformLocs.projection, 1, GL_FALSE, &m_proj[0][0]);
+    if (m_uniformLocs.lightSpaceMatrix != -1) glUniformMatrix4fv(m_uniformLocs.lightSpaceMatrix, 1, GL_FALSE, &m_lightSpaceMatrix[0][0]);
+    if (m_uniformLocs.lightPos != -1) glUniform3fv(m_uniformLocs.lightPos, 1, &lightPos[0]);
+    if (m_uniformLocs.cameraPos != -1) glUniform4fv(m_uniformLocs.cameraPos, 1, &camPos[0]);
+    if (m_uniformLocs.ka != -1) glUniform1f(m_uniformLocs.ka, renderData.globalData.ka);
+    if (m_uniformLocs.kd != -1) glUniform1f(m_uniformLocs.kd, m_kd);
+    if (m_uniformLocs.ks != -1) glUniform1f(m_uniformLocs.ks, m_ks);
+
+    // Bind shadow map texture
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, m_depthMap);
+    if (m_uniformLocs.shadowMap != -1) {
+        glUniform1i(m_uniformLocs.shadowMap, 0);
+    }
+
+    // Render each shape
+    for (const RenderShapeData& shape : renderData.shapes) {
         glBindVertexArray(typeInterpretVao(shape.primitive.type));
 
-        m_mvp = m_proj * m_view * shape.ctm;
-        GLint mvpLoc = glGetUniformLocation(m_shader, "m_mvp");
-        glUniformMatrix4fv(mvpLoc, 1, GL_FALSE, &m_mvp[0][0]);
+        // Set per-object uniforms
+        if (m_uniformLocs.model != -1) glUniformMatrix4fv(m_uniformLocs.model, 1, GL_FALSE, &shape.ctm[0][0]);
 
-        m_model = shape.ctm;
-        GLint model_location = glGetUniformLocation(m_shader, "m_model");
-        glUniformMatrix4fv(model_location, 1, GL_FALSE, &m_model[0][0]);
+        glm::mat4 mvp = m_proj * m_view * shape.ctm;
+        if (m_uniformLocs.mvp != -1) glUniformMatrix4fv(m_uniformLocs.mvp, 1, GL_FALSE, &mvp[0][0]);
 
-        ictm = shape.ictm;
-        GLint ictmLoc = glGetUniformLocation(m_shader, "ictm");
-        glUniformMatrix3fv(ictmLoc, 1, GL_FALSE, &ictm[0][0]);
+        glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(shape.ctm)));
+        if (m_uniformLocs.ictm != -1) glUniformMatrix3fv(m_uniformLocs.ictm, 1, GL_FALSE, &normalMatrix[0][0]);
 
-        GLint cameraPosLoc = glGetUniformLocation(m_shader, "camera_pos");
-        glUniform4fv(cameraPosLoc, 1, &camPos[0]);
-
-        GLint ka_location = glGetUniformLocation(m_shader, "m_ka");
-        glUniform1f(ka_location, renderData.globalData.ka);
-        GLint kd_location = glGetUniformLocation(m_shader, "m_kd");
-        glUniform1f(kd_location, m_kd);
-        GLint ks_location = glGetUniformLocation(m_shader, "m_ks");
-        glUniform1f(ks_location, m_ks);
-
-        SceneMaterial material = shape.primitive.material;
-        GLint cAmbient_location = glGetUniformLocation(m_shader, "m_cAmbient");
-        glUniform4f(cAmbient_location, material.cAmbient.x, material.cAmbient.y, material.cAmbient.z, material.cAmbient.w);
-        GLint cDiffuse_location = glGetUniformLocation(m_shader, "m_cDiffuse");
-        glUniform4f(cDiffuse_location, material.cDiffuse.x, material.cDiffuse.y, material.cDiffuse.z, material.cDiffuse.w);
-        GLint cSpecular_location = glGetUniformLocation(m_shader, "m_cSpecular");
-        glUniform4f(cSpecular_location, material.cSpecular.x, material.cSpecular.y, material.cSpecular.z, material.cSpecular.w);
-        GLint shininess_location = glGetUniformLocation(m_shader, "m_shininess");
-        glUniform1f(shininess_location, material.shininess);
-        GLint cReflectivelocation = glGetUniformLocation(m_shader, "m_cReflective");
-        glUniform4f(cReflectivelocation, material.cReflective.x, material.cReflective.y, material.cReflective.z, material.cReflective.w);
+        const SceneMaterial& material = shape.primitive.material;
+        if (m_uniformLocs.cAmbient != -1) glUniform4fv(m_uniformLocs.cAmbient, 1, &material.cAmbient[0]);
+        if (m_uniformLocs.cDiffuse != -1) glUniform4fv(m_uniformLocs.cDiffuse, 1, &material.cDiffuse[0]);
+        if (m_uniformLocs.cSpecular != -1) glUniform4fv(m_uniformLocs.cSpecular, 1, &material.cSpecular[0]);
+        if (m_uniformLocs.shininess != -1) glUniform1f(m_uniformLocs.shininess, material.shininess);
+        if (m_uniformLocs.cReflective != -1) glUniform4fv(m_uniformLocs.cReflective, 1, &material.cReflective[0]);
 
         glDrawArrays(GL_TRIANGLES, 0, typeInterpretVertices(shape.primitive.type));
         glBindVertexArray(0);
     }
 
     glUseProgram(0);
+
+    // ========== TERRAIN RENDERING ==========
+    if (m_showTerrain) {
+        glEnable(GL_DEPTH_TEST);
+
+        m_terrainProgram->bind();
+        m_terrainProgram->setUniformValue(m_terrainProjMatrixLoc, m_terrainProj);
+        m_terrainProgram->setUniformValue(m_terrainMvMatrixLoc, m_terrainCamera * m_terrainWorld);
+        m_terrainProgram->setUniformValue(m_terrainWireshadeLoc, m_terrain.m_wireshade);
+
+        int res = m_terrain.getResolution();
+
+        m_terrainVao.bind();
+        glPolygonMode(GL_FRONT_AND_BACK, m_terrain.m_wireshade ? GL_LINE : GL_FILL);
+        glDrawArrays(GL_TRIANGLES, 0, res * res * 6);
+        m_terrainVao.release();
+
+        m_terrainProgram->release();
+    }
 }
 
 void Realtime::resizeGL(int w, int h) {
-    // Tells OpenGL how big the screen is
     glViewport(0, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio);
-
-    // Students: anything requiring OpenGL calls when the program starts should be done here
+    m_w = w;
+    m_h = h;
+    rebuildTerrainMatrices();
 }
 
 void Realtime::updateCamera() {
     m_view = camera.calculateViewMatrix(camLook, camUp, camPos);
     m_proj = camera.calculateProjectionMatrix(settings.nearPlane, settings.farPlane);
-    // camPos = glm::inverse(m_view)*glm::vec4(0,0,0,1);
 }
 
 void Realtime::updateLights() {
@@ -225,36 +485,38 @@ void Realtime::updateLights() {
     glUseProgram(m_shader);
 
     std::vector<SceneLightData> lights = renderData.lights;
-    glUniform1i(glGetUniformLocation(m_shader, "numLights"), lights.size());
-    for (int i = 0; i < lights.size(); i++) {
+    GLint numLightsLoc = glGetUniformLocation(m_shader, "numLights");
+    if (numLightsLoc != -1) {
+        glUniform1i(numLightsLoc, std::min(8, static_cast<int>(lights.size())));
+    }
+
+    for (size_t i = 0; i < lights.size() && i < 8; i++) {
         SceneLightData light = lights[i];
+        std::string base = "lights[" + std::to_string(i) + "]";
+
         LightType type = light.type;
         int typeInt = type == LightType::LIGHT_POINT ? 0 : (type == LightType::LIGHT_DIRECTIONAL ? 1 : 2);
-        GLint lightTypeLoc = glGetUniformLocation(m_shader, ("m_lightType["+std::to_string(i)+"]").c_str());
-        glUniform1i(lightTypeLoc, typeInt);
 
-        GLint lightColorLoc = glGetUniformLocation(m_shader, ("m_lightColor["+std::to_string(i)+"]").c_str());
-        glm::vec4 lightColor = light.color;
-        glUniform4f(lightColorLoc, lightColor.x, lightColor.y, lightColor.z, lightColor.w);
+        GLint lightTypeLoc = glGetUniformLocation(m_shader, (base + ".type").c_str());
+        if (lightTypeLoc != -1) glUniform1i(lightTypeLoc, typeInt);
 
-        GLint lightFunctionLoc = glGetUniformLocation(m_shader, ("m_lightFunction["+std::to_string(i)+"]").c_str());
-        glm::vec3 lightFunction= light.function;
-        glUniform3f(lightFunctionLoc, lightFunction.x, lightFunction.y, lightFunction.z);
+        GLint lightColorLoc = glGetUniformLocation(m_shader, (base + ".color").c_str());
+        if (lightColorLoc != -1) glUniform4fv(lightColorLoc, 1, &light.color[0]);
 
-        // might need to multiply light pos by inverse ctm - can do that in paintgl?
-        GLint lightPosLoc = glGetUniformLocation(m_shader, ("m_lightPos["+std::to_string(i)+"]").c_str());
-        glm::vec4 lightPos = light.pos;
-        glUniform4f(lightPosLoc, lightPos.x, lightPos.y, lightPos.z, lightPos.w);
+        GLint lightFunctionLoc = glGetUniformLocation(m_shader, (base + ".function").c_str());
+        if (lightFunctionLoc != -1) glUniform3fv(lightFunctionLoc, 1, &light.function[0]);
 
-        GLint lightDirLoc = glGetUniformLocation(m_shader, ("m_lightDir["+std::to_string(i)+"]").c_str());
-        glm::vec4 lightDir = light.dir;
-        glUniform4f(lightDirLoc, lightDir.x, lightDir.y, lightDir.z, lightDir.w);
+        GLint lightPosLoc = glGetUniformLocation(m_shader, (base + ".pos").c_str());
+        if (lightPosLoc != -1) glUniform4fv(lightPosLoc, 1, &light.pos[0]);
 
-        GLint lightPenumbraLoc = glGetUniformLocation(m_shader, ("m_lightPenumbra["+std::to_string(i)+"]").c_str());
-        glUniform1f(lightPenumbraLoc, light.penumbra);
+        GLint lightDirLoc = glGetUniformLocation(m_shader, (base + ".dir").c_str());
+        if (lightDirLoc != -1) glUniform4fv(lightDirLoc, 1, &light.dir[0]);
 
-        GLint lightAngleLoc = glGetUniformLocation(m_shader, ("m_lightAngle["+std::to_string(i)+"]").c_str());
-        glUniform1f(lightAngleLoc, light.angle);
+        GLint lightPenumbraLoc = glGetUniformLocation(m_shader, (base + ".penumbra").c_str());
+        if (lightPenumbraLoc != -1) glUniform1f(lightPenumbraLoc, light.penumbra);
+
+        GLint lightAngleLoc = glGetUniformLocation(m_shader, (base + ".angle").c_str());
+        if (lightAngleLoc != -1) glUniform1f(lightAngleLoc, light.angle);
     }
     glUseProgram(0);
 }
@@ -264,7 +526,6 @@ void Realtime::sceneChanged() {
     bool success = SceneParser::parse(settings.sceneFilePath, renderData);
     if (!success) return;
 
-
     SceneCameraData camData = renderData.cameraData;
     camera.cameraSetUp(camData, size().width(), size().height());
     camLook = glm::normalize(glm::vec3(camData.look));
@@ -273,19 +534,23 @@ void Realtime::sceneChanged() {
     updateCamera();
     updateLights();
 
-
-    update(); // asks for a PaintGL() call to occur
+    update();
 }
 
 void Realtime::settingsChanged() {
     if (isSetUp) updateShapes();
-    update(); // asks for a PaintGL() call to occur
+    update();
 }
 
 // ================== Camera Movement!
 
 void Realtime::keyPressEvent(QKeyEvent *event) {
     m_keyMap[Qt::Key(event->key())] = true;
+
+    if (event->key() == Qt::Key_T) {
+        m_showTerrain = !m_showTerrain;
+        update();
+    }
 }
 
 void Realtime::keyReleaseEvent(QKeyEvent *event) {
@@ -297,12 +562,62 @@ void Realtime::mousePressEvent(QMouseEvent *event) {
         m_mouseDown = true;
         m_prev_mouse_pos = glm::vec2(event->position().x(), event->position().y());
     }
+
+    // Right mouse button for terrain interaction
+    if (m_showTerrain && event->buttons().testFlag(Qt::LeftButton)) {
+        m_prevMousePosQt = event->pos();
+
+        std::optional<glm::vec3> planeInt = mouse::mouse_click_callback(
+            1, 1, event->pos().x(), event->pos().y(),
+            m_w, m_h, m_terrainProjMatrix, m_terrainViewMatrix, m_terrainVerts,
+            m_terrain.getResolution(), m_terrainWorldMatrix);
+
+        if (planeInt.has_value()) {
+            m_intersected = 1;
+            glm::vec3 hitpoint = planeInt.value();
+            glm::mat4 worldInverse = glm::inverse(m_terrainWorldMatrix);
+            m_hitPoint = glm::vec3(worldInverse * glm::vec4(hitpoint, 1.0f));
+
+            float craterDepth = 0.005f;
+            float craterRadius = 0.01f;
+
+            std::vector<std::pair<float, float>> offsets = {
+                {0.075f, 0.0f},   // Right
+                {-0.075f, 0.0f},  // Left
+                {0.025f, 0.00f},   // Up
+                {-0.025f, 0.0f}   // Down
+            };
+
+            std::unordered_set<int> allAffectedTiles;
+
+            for (const auto& offset : offsets) {
+                float x = m_hitPoint.x + offset.first;
+                float y = m_hitPoint.y + offset.second;
+
+                if (x >= 0.0f && x <= 1.0f && y >= 0.0f && y <= 1.0f) {
+                    m_terrain.divot(x, y, craterDepth, craterRadius);
+                    std::vector<int> tiles = m_terrain.getAffectedTiles(x, y, craterRadius);
+                    allAffectedTiles.insert(tiles.begin(), tiles.end());
+                }
+            }
+
+            float totalRadius = craterRadius + 0.05f;
+            std::vector<int> totalTiles = m_terrain.getAffectedTiles(m_hitPoint.x, m_hitPoint.y, totalRadius);
+            allAffectedTiles.insert(totalTiles.begin(), totalTiles.end());
+
+            updateAffectedTiles(allAffectedTiles);
+        }
+        else {
+            m_intersected = 0;
+        }
+    }
 }
 
 void Realtime::mouseReleaseEvent(QMouseEvent *event) {
     if (!event->buttons().testFlag(Qt::LeftButton)) {
         m_mouseDown = false;
     }
+    m_intersected = 0;
 }
 
 glm::mat3 rotMat(glm::vec3 &u, float angle) {
@@ -318,22 +633,80 @@ glm::mat3 rotMat(glm::vec3 &u, float angle) {
 }
 
 void Realtime::mouseMoveEvent(QMouseEvent *event) {
-    if (m_mouseDown) {
+    // Terrain interaction when mouse button is held
+    if (m_mouseDown && m_showTerrain && m_intersected == 1) {
+        std::optional<glm::vec3> planeInt = mouse::mouse_click_callback(
+            1, 1, event->pos().x(), event->pos().y(),
+            m_w, m_h, m_terrainProjMatrix, m_terrainViewMatrix, m_terrainVerts,
+            m_terrain.getResolution(), m_terrainWorldMatrix);
+
+        if (planeInt.has_value()) {
+            glm::vec3 hitpoint = planeInt.value();
+            glm::mat4 worldInverse = glm::inverse(m_terrainWorldMatrix);
+            glm::vec3 newHitPoint = glm::vec3(worldInverse * glm::vec4(hitpoint, 1.0f));
+
+            float dx = newHitPoint.x - m_hitPoint.x;
+            float dy = newHitPoint.y - m_hitPoint.y;
+            float distSq = dx * dx + dy * dy;
+
+            if (distSq > 0.00025f) {
+                m_hitPoint = newHitPoint;
+
+                float craterDepth = 0.005f;
+                float craterRadius = 0.01f;
+
+                std::vector<std::pair<float, float>> offsets = {
+                    {0.075f, 0.0f},   // Right
+                    {-0.075f, 0.0f},  // Left
+                    {0.025f, 0.00f},   // Mid
+                    {-0.025f, 0.0f}   // Down
+                };
+
+                std::unordered_set<int> allAffectedTiles;
+
+                for (const auto& offset : offsets) {
+                    float x = m_hitPoint.x + offset.first;
+                    float y = m_hitPoint.y + offset.second;
+
+                    if (x >= 0.0f && x <= 1.0f && y >= 0.0f && y <= 1.0f) {
+                        m_terrain.divot(x, y, craterDepth, craterRadius);
+                        std::vector<int> tiles = m_terrain.getAffectedTiles(x, y, craterRadius);
+                        allAffectedTiles.insert(tiles.begin(), tiles.end());
+                    }
+                }
+
+                float totalRadius = craterRadius + 0.05f;
+                std::vector<int> totalTiles = m_terrain.getAffectedTiles(m_hitPoint.x, m_hitPoint.y, totalRadius);
+                allAffectedTiles.insert(totalTiles.begin(), totalTiles.end());
+
+                updateAffectedTiles(allAffectedTiles);
+            }
+        }
+        else {
+            m_intersected = 3;
+        }
+    }
+    // Terrain camera rotation when mouse held but no intersection
+    else if (m_mouseDown && m_showTerrain && m_intersected == 0) {
+        m_angleX += 10 * (event->position().x() - m_prevMousePosQt.x()) / (float) width();
+        m_angleY += 10 * (event->position().y() - m_prevMousePosQt.y()) / (float) height();
+        m_prevMousePosQt = event->pos();
+        rebuildTerrainMatrices();
+    }
+    // Normal scene camera rotation with left mouse button
+    else if (m_mouseDown && event->buttons().testFlag(Qt::LeftButton) && !m_showTerrain) {
         int posX = event->position().x();
         int posY = event->position().y();
         int deltaX = posX - m_prev_mouse_pos.x;
         int deltaY = posY - m_prev_mouse_pos.y;
         m_prev_mouse_pos = glm::vec2(posX, posY);
 
-        // Use deltaX and deltaY here to rotate
         float xAngle = -deltaX * .01f;
         float yAngle = -deltaY * .01f;
 
-        // mouse x: rotate about (0,1,0)
         glm::vec3 xAxis(0.0f, 1.0f, 0.0f);
         glm::mat3 xRot = rotMat(xAxis, xAngle);
 
-        // mouse y: rotate about axis defined by vector perpindicular to look and up
         glm::vec3 yAxis = glm::normalize(glm::cross(camLook, camUp));
         glm::mat3 yRot = rotMat(yAxis, yAngle);
 
@@ -341,8 +714,13 @@ void Realtime::mouseMoveEvent(QMouseEvent *event) {
         camUp = glm::normalize(yRot*xRot*camUp);
 
         updateCamera();
+    }
+}
 
-        update(); // asks for a PaintGL() call to occur
+void Realtime::wheelEvent(QWheelEvent *event) {
+    if (m_showTerrain) {
+        m_zoom -= event->angleDelta().y() / 100.f;
+        rebuildTerrainMatrices();
     }
 }
 
@@ -351,7 +729,6 @@ void Realtime::timerEvent(QTimerEvent *event) {
     float deltaTime = elapsedms * 0.001f;
     m_elapsedTimer.restart();
 
-    // Use deltaTime and m_keyMap here to move around
     float velocity = 5.0f * deltaTime;
     glm::vec3 right = glm::normalize(glm::cross(camLook, camUp));
 
@@ -360,35 +737,29 @@ void Realtime::timerEvent(QTimerEvent *event) {
     if (m_keyMap[Qt::Key_S]) camPos -= glm::vec4(camLook * velocity, 0.0f);
     if (m_keyMap[Qt::Key_D]) camPos += glm::vec4(right * velocity, 0.0f);
 
-    // // // change to be along (0,1 or -1,0)
     if (m_keyMap[Qt::Key_Control]) camPos -= glm::vec4(0.0f, 1.0f, 0.0f, 0.0f) * velocity;
     if (m_keyMap[Qt::Key_Space]) camPos += glm::vec4(0.0f, 1.0f, 0.0f, 0.0f) * velocity;
     updateCamera();
 
-    update(); // asks for a PaintGL() call to occur
+    update();
 }
 
-// DO NOT EDIT
 void Realtime::saveViewportImage(std::string filePath) {
-    // Make sure we have the right context and everything has been drawn
     makeCurrent();
 
     int fixedWidth = 1024;
     int fixedHeight = 768;
 
-    // Create Frame Buffer
     GLuint fbo;
     glGenFramebuffers(1, &fbo);
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 
-    // Create a color attachment texture
     GLuint texture;
     glGenTextures(1, &texture);
     glBindTexture(GL_TEXTURE_2D, texture);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, fixedWidth, fixedHeight, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
 
-    // Optional: Create a depth buffer if your rendering uses depth testing
     GLuint rbo;
     glGenRenderbuffers(1, &rbo);
     glBindRenderbuffer(GL_RENDERBUFFER, rbo);
@@ -401,32 +772,25 @@ void Realtime::saveViewportImage(std::string filePath) {
         return;
     }
 
-    // Render to the FBO
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
     glViewport(0, 0, fixedWidth, fixedHeight);
 
-    // Clear and render your scene here
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     paintGL();
 
-    // Read pixels from framebuffer
     std::vector<unsigned char> pixels(fixedWidth * fixedHeight * 3);
     glReadPixels(0, 0, fixedWidth, fixedHeight, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
 
-    // Unbind the framebuffer to return to default rendering to the screen
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-    // Convert to QImage
     QImage image(pixels.data(), fixedWidth, fixedHeight, QImage::Format_RGB888);
-    QImage flippedImage = image.mirrored(); // Flip the image vertically
+    QImage flippedImage = image.mirrored();
 
-    // Save to file using Qt
     QString qFilePath = QString::fromStdString(filePath);
     if (!flippedImage.save(qFilePath)) {
         std::cerr << "Failed to save image to " << filePath << std::endl;
     }
 
-    // Clean up
     glDeleteTextures(1, &texture);
     glDeleteRenderbuffers(1, &rbo);
     glDeleteFramebuffers(1, &fbo);
