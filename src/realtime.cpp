@@ -8,6 +8,7 @@
 #include "glm/gtc/matrix_transform.hpp"
 #include "mouse.h"
 #include "terrain.h"
+#include "skybox.h"
 
 // ================== Rendering the Scene!
 
@@ -31,10 +32,9 @@ Realtime::Realtime(QWidget *parent)
     m_zoom = 1.0;
     m_intersected = 0;
     m_showTerrain = true;
+    m_placeObjectMode = false;
 
     // If you must use this function, do not edit anything above this
-    m_cubeSize = 0.1f;  // Default cube size
-    m_cubeColor = glm::vec4(0.8f, 0.2f, 0.2f, 1.0f);
 }
 
 void Realtime::bindData(std::vector<float> &shapeData, GLuint &vbo) {
@@ -91,7 +91,6 @@ void Realtime::finish() {
     killTimer(m_timer);
     this->makeCurrent();
 
-    // Students: anything requiring OpenGL calls when the program exits should be done here
     glDeleteBuffers(1, &m_sphere_vbo);
     glDeleteVertexArrays(1, &m_sphere_vao);
     glDeleteBuffers(1, &m_cone_vbo);
@@ -120,6 +119,13 @@ void Realtime::finish() {
         m_terrainProgram = nullptr;
     }
 
+    // Terrain objects cleanup
+    for (const TerrainObject& obj : m_terrainObjects) {
+        glDeleteBuffers(1, &obj.vbo);
+        glDeleteVertexArrays(1, &obj.vao);
+    }
+    m_terrainObjects.clear();
+
     this->doneCurrent();
 }
 
@@ -129,8 +135,6 @@ void Realtime::initializeGL() {
     m_timer = startTimer(1000/60);
     m_elapsedTimer.start();
 
-    // Initializing GL.
-    // GLEW (GL Extension Wrangler) provides access to OpenGL functions.
     glewExperimental = GL_TRUE;
     GLenum err = glewInit();
     if (err != GLEW_OK) {
@@ -138,17 +142,19 @@ void Realtime::initializeGL() {
     }
     std::cout << "Initialized GL: Version " << glewGetString(GLEW_VERSION) << std::endl;
 
-    // Allows OpenGL to draw objects appropriately on top of one another
     glEnable(GL_DEPTH_TEST);
-    // Tells OpenGL to only draw the front face
     glEnable(GL_CULL_FACE);
-    // Tells OpenGL how big the screen is
     glViewport(0, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio);
 
-    // Students: anything requiring OpenGL calls when the program starts should be done here
     glClearColor(0,0,0,1);
     m_shader = ShaderLoader::createShaderProgram(":/resources/shaders/default.vert", ":/resources/shaders/default.frag");
     setUp();
+
+
+    // skybox!
+    skybox s;
+    s.init();
+
 
     // Shadow mapping initialization
     glGenFramebuffers(1, &m_depthMapFBO);
@@ -182,15 +188,11 @@ void Realtime::initializeGL() {
         ":/resources/shaders/shadows.frag"
         );
 
-    // Terrain initialization
     initializeTerrain();
-
-    // Cache uniform locations
     cacheUniformLocations();
 }
 
 void Realtime::cacheUniformLocations() {
-    // Cache main shader uniforms
     glUseProgram(m_shader);
     m_uniformLocs.model = glGetUniformLocation(m_shader, "model");
     m_uniformLocs.view = glGetUniformLocation(m_shader, "view");
@@ -211,7 +213,6 @@ void Realtime::cacheUniformLocations() {
     m_uniformLocs.cReflective = glGetUniformLocation(m_shader, "m_cReflective");
     glUseProgram(0);
 
-    // Cache depth shader uniforms
     glUseProgram(m_depthShader);
     m_depthUniformLocs.lightSpaceMatrix = glGetUniformLocation(m_depthShader, "lightSpaceMatrix");
     m_depthUniformLocs.model = glGetUniformLocation(m_depthShader, "model");
@@ -232,12 +233,10 @@ void Realtime::initializeTerrain() {
     m_terrainVao.create();
     m_terrainVao.bind();
 
-    // Generate initial terrain
     m_terrainVerts = m_terrain.generateTerrain();
 
     m_terrainVbo.create();
     m_terrainVbo.bind();
-    // Use GL_DYNAMIC_DRAW since we'll be updating frequently
     glBufferData(GL_ARRAY_BUFFER, m_terrainVerts.size() * sizeof(GLfloat),
                  m_terrainVerts.data(), GL_DYNAMIC_DRAW);
 
@@ -245,12 +244,9 @@ void Realtime::initializeTerrain() {
     glEnableVertexAttribArray(1);
     glEnableVertexAttribArray(2);
 
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(GLfloat),
-                          nullptr);
-
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(GLfloat), nullptr);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(GLfloat),
                           reinterpret_cast<void *>(3 * sizeof(GLfloat)));
-
     glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(GLfloat),
                           reinterpret_cast<void *>(6 * sizeof(GLfloat)));
 
@@ -263,7 +259,6 @@ void Realtime::initializeTerrain() {
     m_terrainCamera.lookAt(QVector3D(1,1,1),QVector3D(0,0,0),QVector3D(0,0,1));
 
     m_terrainProgram->release();
-
     rebuildTerrainMatrices();
 }
 
@@ -285,7 +280,6 @@ void Realtime::rebuildTerrainMatrices() {
     m_terrainProj.setToIdentity();
     m_terrainProj.perspective(45.0f, 1.0 * width() / height(), 0.01f, 100.0f);
 
-    // Update transformation matrices for mouse picking
     for (int i = 0; i < 4; ++i) {
         for (int j = 0; j < 4; ++j) {
             m_terrainViewMatrix[i][j] = m_terrainCamera(j, i);
@@ -306,7 +300,6 @@ void Realtime::updateAffectedTiles(const std::unordered_set<int>& affectedTiles)
         m_terrain.updateTile(tileX, tileY, m_terrainVerts);
     }
 
-    // Use glBufferSubData for partial updates instead of reallocating
     m_terrainVbo.bind();
     glBufferSubData(GL_ARRAY_BUFFER, 0, m_terrainVerts.size() * sizeof(GLfloat),
                     m_terrainVerts.data());
@@ -326,11 +319,138 @@ void Realtime::updateAffectedTiles(float x, float y, float radius) {
         m_terrain.updateTile(tileX, tileY, m_terrainVerts);
     }
 
-    // Use glBufferSubData for partial updates
     m_terrainVbo.bind();
     glBufferSubData(GL_ARRAY_BUFFER, 0, m_terrainVerts.size() * sizeof(GLfloat),
                     m_terrainVerts.data());
     m_terrainVbo.release();
+}
+
+// ========== TERRAIN OBJECT PLACEMENT SYSTEM ==========
+
+void Realtime::placeObjectOnTerrain(float terrainX, float terrainY, PrimitiveType type, float size) {
+    // Clamp to terrain bounds
+    terrainX = glm::clamp(terrainX, 0.0f, 1.0f);
+    terrainY = glm::clamp(terrainY, 0.0f, 1.0f);
+
+    // Get terrain height at this position
+    float terrainHeight = m_terrain.getHeight(terrainX, terrainY);
+    // Create object
+    TerrainObject obj;
+    obj.type = type;
+    obj.terrainPosition = glm::vec2(terrainX, terrainY);
+    obj.size = size;
+
+    // Build transformation matrix
+    glm::mat4 modelMatrix = glm::mat4(1.0f);
+    modelMatrix = glm::translate(modelMatrix, glm::vec3(terrainX, terrainY, terrainHeight));
+
+    // Adjust placement based on object type
+    switch(type) {
+    case PrimitiveType::PRIMITIVE_CUBE:
+        // Center cube on top of terrain
+        modelMatrix = glm::translate(modelMatrix, glm::vec3(0.0f, 0.0f, size * 0.5f));
+        break;
+    case PrimitiveType::PRIMITIVE_SPHERE:
+        // Center sphere on terrain
+        modelMatrix = glm::translate(modelMatrix, glm::vec3(0.0f, 0.0f, size * 0.5f));
+        break;
+    case PrimitiveType::PRIMITIVE_CONE:
+        // Base of cone sits on terrain
+        modelMatrix = glm::translate(modelMatrix, glm::vec3(0.0f, 0.0f, 0.0f));
+        break;
+    case PrimitiveType::PRIMITIVE_CYLINDER:
+        // Center cylinder on terrain
+        modelMatrix = glm::translate(modelMatrix, glm::vec3(0.0f, 0.0f, size * 0.5f));
+        break;
+    default:
+        break;
+    }
+
+    modelMatrix = glm::scale(modelMatrix, glm::vec3(size));
+    obj.modelMatrix = modelMatrix;
+
+    // Random color for variety
+    obj.color = glm::vec4(
+        0.3f + (rand() % 70) / 100.0f,
+        0.3f + (rand() % 70) / 100.0f,
+        0.3f + (rand() % 70) / 100.0f,
+        1.0f
+        );
+
+    // Get appropriate vertex data based on type
+    std::vector<float> vertexData = getVertexDataForType(type);
+
+    if (vertexData.empty()) {
+        std::cerr << "Failed to get vertex data for object type" << std::endl;
+        return;
+    }
+
+    // Create OpenGL buffers
+    GLuint vbo, vao;
+    glGenBuffers(1, &vbo);
+    glGenVertexArrays(1, &vao);
+
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, vertexData.size() * sizeof(GLfloat),
+                 vertexData.data(), GL_STATIC_DRAW);
+
+    glBindVertexArray(vao);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 6,
+                          reinterpret_cast<void *>(0));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 6,
+                          reinterpret_cast<void *>(sizeof(GLfloat)*3));
+
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+    obj.vbo = vbo;
+    obj.vao = vao;
+    obj.vertexCount = vertexData.size() / 6;
+
+    m_terrainObjects.push_back(obj);
+
+    // debugging print! shouldn't need it anymore.
+   // std::cout << "Placed " << getObjectTypeName(type) << " at terrain ("
+   //           << terrainX << ", " << terrainY << "), height: " << terrainHeight << std::endl;
+
+    update();
+}
+
+std::vector<float> Realtime::getVertexDataForType(PrimitiveType type) {
+    switch(type) {
+    case PrimitiveType::PRIMITIVE_CUBE:
+        return m_cube_data;
+    case PrimitiveType::PRIMITIVE_SPHERE:
+        return m_sphere_data;
+    case PrimitiveType::PRIMITIVE_CONE:
+        return m_cone_data;
+    case PrimitiveType::PRIMITIVE_CYLINDER:
+        return m_cylinder_data;
+    default:
+        return std::vector<float>();
+    }
+}
+
+std::string Realtime::getObjectTypeName(PrimitiveType type) {
+    switch(type) {
+    case PrimitiveType::PRIMITIVE_CUBE: return "Cube";
+    case PrimitiveType::PRIMITIVE_SPHERE: return "Sphere";
+    case PrimitiveType::PRIMITIVE_CONE: return "Cone";
+    case PrimitiveType::PRIMITIVE_CYLINDER: return "Cylinder";
+    default: return "Unknown";
+    }
+}
+
+void Realtime::clearTerrainObjects() {
+    for (const TerrainObject& obj : m_terrainObjects) {
+        glDeleteBuffers(1, &obj.vbo);
+        glDeleteVertexArrays(1, &obj.vao);
+    }
+    m_terrainObjects.clear();
+    update();
+    std::cout << "Cleared all terrain objects" << std::endl;
 }
 
 GLuint Realtime::typeInterpretVao(PrimitiveType type) {
@@ -383,16 +503,27 @@ void Realtime::paintGL() {
         glUniformMatrix4fv(m_depthUniformLocs.lightSpaceMatrix, 1, GL_FALSE, &m_lightSpaceMatrix[0][0]);
     }
 
-    // Render shadow pass for shapes
+    // Shadow pass for scene shapes
     for (const RenderShapeData& shape : renderData.shapes) {
         if (m_depthUniformLocs.model != -1) {
             glUniformMatrix4fv(m_depthUniformLocs.model, 1, GL_FALSE, &shape.ctm[0][0]);
         }
-
         glBindVertexArray(typeInterpretVao(shape.primitive.type));
         glDrawArrays(GL_TRIANGLES, 0, typeInterpretVertices(shape.primitive.type));
         glBindVertexArray(0);
     }
+
+    // Shadow pass for terrain objects
+    for (const TerrainObject& obj : m_terrainObjects) {
+        if (m_depthUniformLocs.model != -1) {
+            glUniformMatrix4fv(m_depthUniformLocs.model, 1, GL_FALSE, &obj.modelMatrix[0][0]);
+        }
+        glBindVertexArray(obj.vao);
+        glDrawArrays(GL_TRIANGLES, 0, obj.vertexCount);
+        glBindVertexArray(0);
+    }
+
+
 
     // ========== MAIN SCENE RENDER ==========
     glBindFramebuffer(GL_FRAMEBUFFER, defaultFramebufferObject());
@@ -401,48 +532,6 @@ void Realtime::paintGL() {
 
     glUseProgram(m_shader);
 
-    // Set view-independent uniforms once
-    if (m_uniformLocs.view != -1) glUniformMatrix4fv(m_uniformLocs.view, 1, GL_FALSE, &m_view[0][0]);
-    if (m_uniformLocs.projection != -1) glUniformMatrix4fv(m_uniformLocs.projection, 1, GL_FALSE, &m_proj[0][0]);
-    if (m_uniformLocs.lightSpaceMatrix != -1) glUniformMatrix4fv(m_uniformLocs.lightSpaceMatrix, 1, GL_FALSE, &m_lightSpaceMatrix[0][0]);
-    if (m_uniformLocs.lightPos != -1) glUniform3fv(m_uniformLocs.lightPos, 1, &lightPos[0]);
-    if (m_uniformLocs.cameraPos != -1) glUniform4fv(m_uniformLocs.cameraPos, 1, &camPos[0]);
-    if (m_uniformLocs.ka != -1) glUniform1f(m_uniformLocs.ka, renderData.globalData.ka);
-    if (m_uniformLocs.kd != -1) glUniform1f(m_uniformLocs.kd, m_kd);
-    if (m_uniformLocs.ks != -1) glUniform1f(m_uniformLocs.ks, m_ks);
-
-    // Bind shadow map texture
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, m_depthMap);
-    if (m_uniformLocs.shadowMap != -1) {
-        glUniform1i(m_uniformLocs.shadowMap, 0);
-    }
-
-    // Render each shape
-    for (const RenderShapeData& shape : renderData.shapes) {
-        glBindVertexArray(typeInterpretVao(shape.primitive.type));
-
-        // Set per-object uniforms
-        if (m_uniformLocs.model != -1) glUniformMatrix4fv(m_uniformLocs.model, 1, GL_FALSE, &shape.ctm[0][0]);
-
-        glm::mat4 mvp = m_proj * m_view * shape.ctm;
-        if (m_uniformLocs.mvp != -1) glUniformMatrix4fv(m_uniformLocs.mvp, 1, GL_FALSE, &mvp[0][0]);
-
-        glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(shape.ctm)));
-        if (m_uniformLocs.ictm != -1) glUniformMatrix3fv(m_uniformLocs.ictm, 1, GL_FALSE, &normalMatrix[0][0]);
-
-        const SceneMaterial& material = shape.primitive.material;
-        if (m_uniformLocs.cAmbient != -1) glUniform4fv(m_uniformLocs.cAmbient, 1, &material.cAmbient[0]);
-        if (m_uniformLocs.cDiffuse != -1) glUniform4fv(m_uniformLocs.cDiffuse, 1, &material.cDiffuse[0]);
-        if (m_uniformLocs.cSpecular != -1) glUniform4fv(m_uniformLocs.cSpecular, 1, &material.cSpecular[0]);
-        if (m_uniformLocs.shininess != -1) glUniform1f(m_uniformLocs.shininess, material.shininess);
-        if (m_uniformLocs.cReflective != -1) glUniform4fv(m_uniformLocs.cReflective, 1, &material.cReflective[0]);
-
-        glDrawArrays(GL_TRIANGLES, 0, typeInterpretVertices(shape.primitive.type));
-        glBindVertexArray(0);
-    }
-
-    glUseProgram(0);
 
     // ========== TERRAIN RENDERING ==========
     if (m_showTerrain) {
@@ -462,6 +551,75 @@ void Realtime::paintGL() {
 
         m_terrainProgram->release();
     }
+
+    // ========== TERRAIN OBJECTS RENDERING ==========
+    // Use the main shader for terrain objects
+    glUseProgram(m_shader);
+
+    // Convert QMatrix4x4 to glm::mat4 for terrain camera matrices
+    glm::mat4 terrainViewMatrix = glm::mat4(1.0f);
+    glm::mat4 terrainProjMatrix = glm::mat4(1.0f);
+
+    // Copy the QMatrix4x4 values to glm::mat4
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < 4; ++j) {
+            terrainViewMatrix[i][j] = m_terrainCamera(j, i);
+            terrainProjMatrix[i][j] = m_terrainProj(j, i);
+        }
+    }
+
+    // Combine with terrain world matrix
+    glm::mat4 terrainMVMatrix = terrainViewMatrix * m_terrainWorldMatrix;
+
+    // Set terrain camera matrices for terrain objects
+    if (m_uniformLocs.view != -1) glUniformMatrix4fv(m_uniformLocs.view, 1, GL_FALSE, &terrainViewMatrix[0][0]);
+    if (m_uniformLocs.projection != -1) glUniformMatrix4fv(m_uniformLocs.projection, 1, GL_FALSE, &terrainProjMatrix[0][0]);
+
+    // Set other uniforms (same as before)
+    if (m_uniformLocs.lightSpaceMatrix != -1) glUniformMatrix4fv(m_uniformLocs.lightSpaceMatrix, 1, GL_FALSE, &m_lightSpaceMatrix[0][0]);
+    if (m_uniformLocs.lightPos != -1) glUniform3fv(m_uniformLocs.lightPos, 1, &lightPos[0]);
+    if (m_uniformLocs.cameraPos != -1) {
+        // Get camera position from terrain camera
+        QVector3D eye = m_terrainCamera * QVector3D(0, 0, 0); // Camera position in world space
+        glm::vec4 camPosVec(eye.x(), eye.y(), eye.z(), 1.0f);
+        glUniform4fv(m_uniformLocs.cameraPos, 1, &camPosVec[0]);
+    }
+    if (m_uniformLocs.ka != -1) glUniform1f(m_uniformLocs.ka, renderData.globalData.ka);
+    if (m_uniformLocs.kd != -1) glUniform1f(m_uniformLocs.kd, 0.8f); // Use a default value
+    if (m_uniformLocs.ks != -1) glUniform1f(m_uniformLocs.ks, 0.5f); // Use a default value
+
+    // Bind shadow map
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, m_depthMap);
+    if (m_uniformLocs.shadowMap != -1) {
+        glUniform1i(m_uniformLocs.shadowMap, 0);
+    }
+
+    // Render terrain objects
+    for (const TerrainObject& obj : m_terrainObjects) {
+        glBindVertexArray(obj.vao);
+
+        glm::mat4 fullModelMatrix = m_terrainWorldMatrix * obj.modelMatrix;
+
+        if (m_uniformLocs.model != -1) glUniformMatrix4fv(m_uniformLocs.model, 1, GL_FALSE, &fullModelMatrix[0][0]);
+
+        glm::mat4 mvp = terrainProjMatrix * terrainViewMatrix * fullModelMatrix;
+        if (m_uniformLocs.mvp != -1) glUniformMatrix4fv(m_uniformLocs.mvp, 1, GL_FALSE, &mvp[0][0]);
+
+        glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(fullModelMatrix)));
+        if (m_uniformLocs.ictm != -1) glUniformMatrix3fv(m_uniformLocs.ictm, 1, GL_FALSE, &normalMatrix[0][0]);
+
+        if (m_uniformLocs.cAmbient != -1) glUniform4fv(m_uniformLocs.cAmbient, 1, &obj.color[0]);
+        if (m_uniformLocs.cDiffuse != -1) glUniform4fv(m_uniformLocs.cDiffuse, 1, &obj.color[0]);
+        if (m_uniformLocs.cSpecular != -1) glUniform4f(m_uniformLocs.cSpecular, 0.5f, 0.5f, 0.5f, 1.0f);
+        if (m_uniformLocs.shininess != -1) glUniform1f(m_uniformLocs.shininess, 32.0f);
+        if (m_uniformLocs.cReflective != -1) glUniform4f(m_uniformLocs.cReflective, 0.0f, 0.0f, 0.0f, 0.0f);
+
+        glDrawArrays(GL_TRIANGLES, 0, obj.vertexCount);
+        glBindVertexArray(0);
+    }
+
+    glUseProgram(0);
 }
 
 void Realtime::resizeGL(int w, int h) {
@@ -549,7 +707,41 @@ void Realtime::keyPressEvent(QKeyEvent *event) {
 
     if (event->key() == Qt::Key_T) {
         m_showTerrain = !m_showTerrain;
+        std::cout << "Terrain " << (m_showTerrain ? "enabled" : "disabled") << std::endl;
         update();
+    }
+
+    // Toggle object placement mode
+    if (event->key() == Qt::Key_C) {
+        m_placeObjectMode = !m_placeObjectMode;
+        if (m_placeObjectMode) {
+            std::cout << "Object placement mode enabled - Click on terrain to place objects" << std::endl;
+        } else {
+            std::cout << "Object placement mode disabled" << std::endl;
+        }
+    }
+
+    // Cycle through object types
+    if (event->key() == Qt::Key_1) {
+        m_currentObjectType = PrimitiveType::PRIMITIVE_CUBE;
+        std::cout << "Selected: Cube" << std::endl;
+    }
+    if (event->key() == Qt::Key_2) {
+        m_currentObjectType = PrimitiveType::PRIMITIVE_SPHERE;
+        std::cout << "Selected: Sphere" << std::endl;
+    }
+    if (event->key() == Qt::Key_3) {
+        m_currentObjectType = PrimitiveType::PRIMITIVE_CONE;
+        std::cout << "Selected: Cone" << std::endl;
+    }
+    if (event->key() == Qt::Key_4) {
+        m_currentObjectType = PrimitiveType::PRIMITIVE_CYLINDER;
+        std::cout << "Selected: Cylinder" << std::endl;
+    }
+
+    // Clear all terrain objects
+    if (event->key() == Qt::Key_X) {
+        clearTerrainObjects();
     }
 }
 
@@ -563,7 +755,7 @@ void Realtime::mousePressEvent(QMouseEvent *event) {
         m_prev_mouse_pos = glm::vec2(event->position().x(), event->position().y());
     }
 
-    // Right mouse button for terrain interaction
+    // Terrain interaction with left button
     if (m_showTerrain && event->buttons().testFlag(Qt::LeftButton)) {
         m_prevMousePosQt = event->pos();
 
@@ -578,34 +770,41 @@ void Realtime::mousePressEvent(QMouseEvent *event) {
             glm::mat4 worldInverse = glm::inverse(m_terrainWorldMatrix);
             m_hitPoint = glm::vec3(worldInverse * glm::vec4(hitpoint, 1.0f));
 
-            float craterDepth = 0.005f;
-            float craterRadius = 0.01f;
-
-            std::vector<std::pair<float, float>> offsets = {
-                {0.075f, 0.0f},   // Right
-                {-0.075f, 0.0f},  // Left
-                {0.025f, 0.00f},   // Up
-                {-0.025f, 0.0f}   // Down
-            };
-
-            std::unordered_set<int> allAffectedTiles;
-
-            for (const auto& offset : offsets) {
-                float x = m_hitPoint.x + offset.first;
-                float y = m_hitPoint.y + offset.second;
-
-                if (x >= 0.0f && x <= 1.0f && y >= 0.0f && y <= 1.0f) {
-                    m_terrain.divot(x, y, craterDepth, craterRadius);
-                    std::vector<int> tiles = m_terrain.getAffectedTiles(x, y, craterRadius);
-                    allAffectedTiles.insert(tiles.begin(), tiles.end());
-                }
+            // Place object mode
+            if (m_placeObjectMode) {
+                placeObjectOnTerrain(m_hitPoint.x, m_hitPoint.y, m_currentObjectType, 0.05f);
             }
+            // Terrain sculpting mode
+            else {
+                float craterDepth = 0.005f;
+                float craterRadius = 0.01f;
 
-            float totalRadius = craterRadius + 0.05f;
-            std::vector<int> totalTiles = m_terrain.getAffectedTiles(m_hitPoint.x, m_hitPoint.y, totalRadius);
-            allAffectedTiles.insert(totalTiles.begin(), totalTiles.end());
+                std::vector<std::pair<float, float>> offsets = {
+                    {0.075f, 0.0f},
+                    {-0.075f, 0.0f},
+                    {0.025f, 0.00f},
+                    {-0.025f, 0.0f}
+                };
 
-            updateAffectedTiles(allAffectedTiles);
+                std::unordered_set<int> allAffectedTiles;
+
+                for (const auto& offset : offsets) {
+                    float x = m_hitPoint.x + offset.first;
+                    float y = m_hitPoint.y + offset.second;
+
+                    if (x >= 0.0f && x <= 1.0f && y >= 0.0f && y <= 1.0f) {
+                        m_terrain.divot(x, y, craterDepth, craterRadius);
+                        std::vector<int> tiles = m_terrain.getAffectedTiles(x, y, craterRadius);
+                        allAffectedTiles.insert(tiles.begin(), tiles.end());
+                    }
+                }
+
+                float totalRadius = craterRadius + 0.05f;
+                std::vector<int> totalTiles = m_terrain.getAffectedTiles(m_hitPoint.x, m_hitPoint.y, totalRadius);
+                allAffectedTiles.insert(totalTiles.begin(), totalTiles.end());
+
+                updateAffectedTiles(allAffectedTiles);
+            }
         }
         else {
             m_intersected = 0;
@@ -633,8 +832,8 @@ glm::mat3 rotMat(glm::vec3 &u, float angle) {
 }
 
 void Realtime::mouseMoveEvent(QMouseEvent *event) {
-    // Terrain interaction when mouse button is held
-    if (m_mouseDown && m_showTerrain && m_intersected == 1) {
+    // Terrain sculpting when dragging
+    if (m_mouseDown && m_showTerrain && m_intersected == 1 && !m_placeObjectMode) {
         std::optional<glm::vec3> planeInt = mouse::mouse_click_callback(
             1, 1, event->pos().x(), event->pos().y(),
             m_w, m_h, m_terrainProjMatrix, m_terrainViewMatrix, m_terrainVerts,
@@ -656,10 +855,10 @@ void Realtime::mouseMoveEvent(QMouseEvent *event) {
                 float craterRadius = 0.01f;
 
                 std::vector<std::pair<float, float>> offsets = {
-                    {0.075f, 0.0f},   // Right
-                    {-0.075f, 0.0f},  // Left
-                    {0.025f, 0.00f},   // Mid
-                    {-0.025f, 0.0f}   // Down
+                    {0.075f, 0.0f},
+                    {-0.075f, 0.0f},
+                    {0.025f, 0.00f},
+                    {-0.025f, 0.0f}
                 };
 
                 std::unordered_set<int> allAffectedTiles;
@@ -686,14 +885,14 @@ void Realtime::mouseMoveEvent(QMouseEvent *event) {
             m_intersected = 3;
         }
     }
-    // Terrain camera rotation when mouse held but no intersection
+    // Terrain camera rotation
     else if (m_mouseDown && m_showTerrain && m_intersected == 0) {
         m_angleX += 10 * (event->position().x() - m_prevMousePosQt.x()) / (float) width();
         m_angleY += 10 * (event->position().y() - m_prevMousePosQt.y()) / (float) height();
         m_prevMousePosQt = event->pos();
         rebuildTerrainMatrices();
     }
-    // Normal scene camera rotation with left mouse button
+    // Normal scene camera rotation
     else if (m_mouseDown && event->buttons().testFlag(Qt::LeftButton) && !m_showTerrain) {
         int posX = event->position().x();
         int posY = event->position().y();

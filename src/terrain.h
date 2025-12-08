@@ -38,9 +38,10 @@ public:
     void updateTile(int tileX, int tileY, std::vector<float>& allVerts);
 
     bool m_wireshade;
+    float getHeight(float x, float y);
 
 private:
-    float getHeight(float x, float y);
+
     float computePerlin(float x, float y);
     glm::vec2 sampleRandomVector(int row, int col);
 

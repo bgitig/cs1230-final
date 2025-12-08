@@ -230,6 +230,7 @@ float Terrain::getHeight(float x, float y) {
     return z + getHeightModification(x, y);
 }
 
+
 // Computes the normal of a vertex by averaging neighbors
 glm::vec3 Terrain::getNormal(int row, int col) {
     glm::vec3 V = getPosition(row, col);

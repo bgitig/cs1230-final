@@ -49,6 +49,8 @@ add_executable(${PROJECT_NAME}
     src/utils/cylinder.h src/utils/cylinder.cpp
     src/terrain.h src/terrain.cpp
     src/mouse.h src/mouse.cpp
+    src/skybox.h src/skybox.cpp
+    src/stb_image.h
 )
 
 # GLM: this creates its library and allows you to `#include "glm/..."`

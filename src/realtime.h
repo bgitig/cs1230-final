@@ -24,6 +24,7 @@
 #include "utils/shaderloader.h"
 #include "terrain.h"
 
+
 class Realtime : public QOpenGLWidget
 {
 public:
@@ -32,14 +33,33 @@ public:
     void sceneChanged();
     void settingsChanged();
     void saveViewportImage(std::string filePath);
-    struct TerrainCube {
-        glm::vec3 position;  // Position on terrain
-        glm::mat4 modelMatrix;  // Transformation matrix
-        float size;  // Cube size
-        glm::vec4 color;  // Cube color
+
+    // ========== TERRAIN OBJECT SYSTEM ==========
+    enum class ObjectType {
+        CUBE,
+        SPHERE,
+        CONE,
+        CYLINDER
     };
 
-    std::vector<TerrainCube> m_terrainCubes;
+    struct TerrainObject {
+        PrimitiveType type;              // Type of object
+        glm::vec2 terrainPosition;    // Position on terrain (0-1 space)
+        glm::mat4 modelMatrix;        // Full transformation matrix
+        float size;                   // Object scale
+        glm::vec4 color;              // Object color
+        GLuint vbo;                   // Vertex buffer object
+        GLuint vao;                   // Vertex array object
+        GLsizei vertexCount;          // Number of vertices
+    };
+
+    std::vector<TerrainObject> m_terrainObjects;
+
+    // Place an object on the terrain at given coordinates
+    void placeObjectOnTerrain(float terrainX, float terrainY, PrimitiveType type, float size = 0.05f);
+
+    // Clear all terrain objects
+    void clearTerrainObjects();
 
 public slots:
     void tick(QTimerEvent* event);
@@ -188,11 +208,17 @@ private:
     int m_w;
     int m_h;
 
-    bool m_showTerrain; // Toggle for terrain visibility
+    bool m_showTerrain;
+    bool m_placeObjectMode = false;
+    PrimitiveType m_currentObjectType = PrimitiveType::PRIMITIVE_CUBE;
 
     // Terrain methods
     void initializeTerrain();
     void rebuildTerrainMatrices();
     void updateAffectedTiles(const std::unordered_set<int>& affectedTiles);
     void updateAffectedTiles(float x, float y, float radius);
+
+    // Helper methods for terrain object system
+    std::vector<float> getVertexDataForType(PrimitiveType type);
+    std::string getObjectTypeName(PrimitiveType type);
 };
