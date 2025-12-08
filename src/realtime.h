@@ -23,6 +23,7 @@
 #include "utils/cylinder.h"
 #include "utils/shaderloader.h"
 #include "terrain.h"
+#include "skybox.h"
 
 
 class Realtime : public QOpenGLWidget
@@ -34,12 +35,9 @@ public:
     void settingsChanged();
     void saveViewportImage(std::string filePath);
 
-    // ========== TERRAIN OBJECT SYSTEM ==========
-    enum class ObjectType {
-        CUBE,
-        SPHERE,
-        CONE,
-        CYLINDER
+    // ========== SARYA: TERRAIN OBJECT SYSTEM ==========
+    enum class LSystem {
+        // if you want to replace the PrimitiveType enum with an L System type enum
     };
 
     struct TerrainObject {
@@ -56,6 +54,7 @@ public:
     std::vector<TerrainObject> m_terrainObjects;
 
     // Place an object on the terrain at given coordinates
+    // SARYA: probably where the most changes will be
     void placeObjectOnTerrain(float terrainX, float terrainY, PrimitiveType type, float size = 0.05f);
 
     // Clear all terrain objects
@@ -221,4 +220,8 @@ private:
     // Helper methods for terrain object system
     std::vector<float> getVertexDataForType(PrimitiveType type);
     std::string getObjectTypeName(PrimitiveType type);
+
+
+    // skybox
+    skybox m_skybox;
 };

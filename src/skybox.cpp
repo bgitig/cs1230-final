@@ -1,6 +1,6 @@
 #include "skybox.h"
-#define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
+#include <QImage>
+
 
 // Skybox vertices
 float skyboxVertices[] = {
@@ -53,12 +53,12 @@ skybox::skybox() : textureID(0), VAO(0), VBO(0), shaderProgram(0) {}
 void skybox::init() {
     // Load cubemap textures
     std::vector<std::string> faces = {
-        "right.jpg",    // GL_TEXTURE_CUBE_MAP_POSITIVE_X
-        "left.jpg",     // GL_TEXTURE_CUBE_MAP_NEGATIVE_X
-        "top.jpg",      // GL_TEXTURE_CUBE_MAP_POSITIVE_Y
-        "bottom.jpg",   // GL_TEXTURE_CUBE_MAP_NEGATIVE_Y
-        "front.jpg",    // GL_TEXTURE_CUBE_MAP_POSITIVE_Z
-        "back.jpg"      // GL_TEXTURE_CUBE_MAP_NEGATIVE_Z
+        ":/images/sky.jpg",    // GL_TEXTURE_CUBE_MAP_POSITIVE_X
+        ":/images/sky.jpg",     // GL_TEXTURE_CUBE_MAP_NEGATIVE_X
+        ":/images/sky.jpg",      // GL_TEXTURE_CUBE_MAP_POSITIVE_Y top
+        ":/images/sky.jpg",   // GL_TEXTURE_CUBE_MAP_NEGATIVE_Y bottom
+        ":/images/sky.jpg",    // GL_TEXTURE_CUBE_MAP_POSITIVE_Z
+        ":/images/sky.jpg"      // GL_TEXTURE_CUBE_MAP_NEGATIVE_Z
     };
 
     textureID = loadCubemap(faces);
@@ -67,13 +67,21 @@ void skybox::init() {
 }
 
 unsigned char* skybox::loadImage(const char* filename, int* width, int* height, int* nrChannels) {
-    stbi_set_flip_vertically_on_load(false); // Important: don't flip skybox textures
-    unsigned char* data = stbi_load(filename, width, height, nrChannels, 0);
-
-    if (!data) {
+    QImage image;
+    if (!image.load(filename)) {
         std::cout << "Failed to load image: " << filename << std::endl;
-        std::cout << "STB Reason: " << stbi_failure_reason() << std::endl;
+        return nullptr;
     }
+
+    image = image.convertToFormat(QImage::Format_RGBA8888);
+
+    *width = image.width();
+    *height = image.height();
+    *nrChannels = 4; // RGBA
+
+    // Copy image data
+    unsigned char* data = new unsigned char[image.sizeInBytes()];
+    memcpy(data, image.constBits(), image.sizeInBytes());
 
     return data;
 }
@@ -86,7 +94,15 @@ unsigned int skybox::loadCubemap(std::vector<std::string> faces) {
 
     int width, height, nrChannels;
     for (unsigned int i = 0; i < faces.size(); i++) {
+        std::cout << "Loading cubemap face " << i << ": " << faces[i] << std::endl;
+
         unsigned char* data = loadImage(faces[i].c_str(), &width, &height, &nrChannels);
+
+        if (data) {
+            std::cout << "  Success! Dimensions: " << width << "x" << height
+                      << ", Channels: " << nrChannels << std::endl;
+        }
+
         if (data) {
             GLenum format = GL_RGB;
             if (nrChannels == 1)
@@ -99,7 +115,7 @@ unsigned int skybox::loadCubemap(std::vector<std::string> faces) {
             glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i,
                          0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
 
-            stbi_image_free(data);
+            delete[] data;
         } else {
             std::cout << "Failed to load skybox texture: " << faces[i] << std::endl;
             // Generate a colored fallback texture

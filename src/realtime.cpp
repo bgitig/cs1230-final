@@ -8,7 +8,6 @@
 #include "glm/gtc/matrix_transform.hpp"
 #include "mouse.h"
 #include "terrain.h"
-#include "skybox.h"
 
 // ================== Rendering the Scene!
 
@@ -152,8 +151,7 @@ void Realtime::initializeGL() {
 
 
     // skybox!
-    skybox s;
-    s.init();
+    //m_skybox.init();
 
 
     // Shadow mapping initialization
@@ -325,7 +323,7 @@ void Realtime::updateAffectedTiles(float x, float y, float radius) {
     m_terrainVbo.release();
 }
 
-// ========== TERRAIN OBJECT PLACEMENT SYSTEM ==========
+// ========== SARYA: TERRAIN OBJECT PLACEMENT SYSTEM - REPLACE THIS CODE AS NEEDED ==========
 
 void Realtime::placeObjectOnTerrain(float terrainX, float terrainY, PrimitiveType type, float size) {
     // Clamp to terrain bounds
@@ -486,6 +484,14 @@ GLsizei Realtime::typeInterpretVertices(PrimitiveType type) {
 void Realtime::paintGL() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+    // ========== SKYBOX =========
+    glDepthMask(GL_FALSE);  // Disable depth writing for skybox
+
+    // Use terrain camera matrices for skybox
+    glm::mat4 terrainViewMatrix = glm::mat4(1.0f);
+    glm::mat4 terrainProjMatrix = glm::mat4(1.0f);
+
+
     // ========== SHADOW PASS ==========
     glm::vec3 lightPos = glm::vec3(-2.0f, 4.0f, -1.0f);
     glm::mat4 lightProjection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, 1.0f, 7.5f);
@@ -513,7 +519,7 @@ void Realtime::paintGL() {
         glBindVertexArray(0);
     }
 
-    // Shadow pass for terrain objects
+    // SARYA: Shadow pass for terrain objects - update if needed
     for (const TerrainObject& obj : m_terrainObjects) {
         if (m_depthUniformLocs.model != -1) {
             glUniformMatrix4fv(m_depthUniformLocs.model, 1, GL_FALSE, &obj.modelMatrix[0][0]);
@@ -552,13 +558,13 @@ void Realtime::paintGL() {
         m_terrainProgram->release();
     }
 
-    // ========== TERRAIN OBJECTS RENDERING ==========
+    // ========== SARYA: OBJECTS ON SAND RENDERING - UPDATE SHADER IF NECESSARY ==========
     // Use the main shader for terrain objects
     glUseProgram(m_shader);
 
     // Convert QMatrix4x4 to glm::mat4 for terrain camera matrices
-    glm::mat4 terrainViewMatrix = glm::mat4(1.0f);
-    glm::mat4 terrainProjMatrix = glm::mat4(1.0f);
+     terrainViewMatrix = glm::mat4(1.0f);
+     terrainProjMatrix = glm::mat4(1.0f);
 
     // Copy the QMatrix4x4 values to glm::mat4
     for (int i = 0; i < 4; ++i) {
@@ -595,7 +601,7 @@ void Realtime::paintGL() {
         glUniform1i(m_uniformLocs.shadowMap, 0);
     }
 
-    // Render terrain objects
+    // SARYA - RENDER TERRAIN OBJS - CHANGE IF NEEDED
     for (const TerrainObject& obj : m_terrainObjects) {
         glBindVertexArray(obj.vao);
 

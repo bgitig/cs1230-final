@@ -51,6 +51,9 @@ add_executable(${PROJECT_NAME}
     src/mouse.h src/mouse.cpp
     src/skybox.h src/skybox.cpp
     src/stb_image.h
+    src/sky.qrc
+
+
 )
 
 # GLM: this creates its library and allows you to `#include "glm/..."`
@@ -84,6 +87,8 @@ qt6_add_resources(${PROJECT_NAME} "Resources"
         resources/shaders/terrain.frag
         resources/shaders/terrain.vert
 )
+
+qt_add_resources(sky.qrc)
 
 # GLEW: this provides support for Windows (including 64-bit)
 if (WIN32)
