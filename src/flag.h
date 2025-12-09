@@ -29,6 +29,7 @@ public:
     void initialize(int width, int height, float spacing, const glm::vec3& anchorPos);
     void update(float deltaTime);
     void render();
+    void renderPole();
     void cleanup();
 
     void setWindForce(const glm::vec3& wind) { m_windForce = wind; }
@@ -39,6 +40,11 @@ public:
 
     GLuint getVAO() const { return m_vao; }
     GLuint getVBO() const { return m_vbo; }
+
+    //Pole
+    GLuint getPoleVAO() const { return m_poleVao; }
+    GLuint getPoleVBO() const { return m_poleVbo; }
+    int getPoleVertexCount() const { return m_poleVertexCount; }
 
 private:
     void createMesh(int width, int height, float spacing, const glm::vec3& anchorPos);
@@ -68,4 +74,11 @@ private:
     GLuint m_vao;
     GLuint m_vbo;
     bool m_initialized;
+
+    //For pole stuff
+    void createPole(float poleHeight, float poleRadius);
+    std::vector<float> m_poleVertexData;
+    GLuint m_poleVao;
+    GLuint m_poleVbo;
+    int m_poleVertexCount;
 };

@@ -640,6 +640,43 @@ void Realtime::paintGL() {
         glBindVertexArray(0);
     }
 
+    //  RENDER FLAGS
+    glDisable(GL_CULL_FACE);
+
+    for (const TerrainObject& obj : m_terrainObjects) {
+        if (!obj.isFlag || !obj.flagSimulation) continue;
+
+        glm::mat4 fullModelMatrix = m_terrainWorldMatrix * obj.modelMatrix;
+
+        if (m_uniformLocs.model != -1) glUniformMatrix4fv(m_uniformLocs.model, 1, GL_FALSE, &fullModelMatrix[0][0]);
+
+        glm::mat4 mvp = terrainProjMatrix * terrainViewMatrix * fullModelMatrix;
+        if (m_uniformLocs.mvp != -1) glUniformMatrix4fv(m_uniformLocs.mvp, 1, GL_FALSE, &mvp[0][0]);
+
+        glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(fullModelMatrix)));
+        if (m_uniformLocs.ictm != -1) glUniformMatrix3fv(m_uniformLocs.ictm, 1, GL_FALSE, &normalMatrix[0][0]);
+
+        // Render pole -- NOT WORKING NEED HELP
+        glm::vec4 poleColor = glm::vec4(0.9f, 0.6f, 0.3f, 1.0f);
+        if (m_uniformLocs.cAmbient != -1) glUniform4fv(m_uniformLocs.cAmbient, 1, &poleColor[0]);
+        if (m_uniformLocs.cDiffuse != -1) glUniform4fv(m_uniformLocs.cDiffuse, 1, &poleColor[0]);
+        if (m_uniformLocs.cSpecular != -1) glUniform4f(m_uniformLocs.cSpecular, 0.3f, 0.3f, 0.3f, 1.0f);
+        if (m_uniformLocs.shininess != -1) glUniform1f(m_uniformLocs.shininess, 32.0f);
+        if (m_uniformLocs.cReflective != -1) glUniform4f(m_uniformLocs.cReflective, 0.0f, 0.0f, 0.0f, 0.0f);
+
+        obj.flagSimulation->renderPole();
+
+        // Render flag cloth
+        if (m_uniformLocs.cAmbient != -1) glUniform4fv(m_uniformLocs.cAmbient, 1, &obj.color[0]);
+        if (m_uniformLocs.cDiffuse != -1) glUniform4fv(m_uniformLocs.cDiffuse, 1, &obj.color[0]);
+        if (m_uniformLocs.cSpecular != -1) glUniform4f(m_uniformLocs.cSpecular, 0.5f, 0.5f, 0.5f, 1.0f);
+        if (m_uniformLocs.shininess != -1) glUniform1f(m_uniformLocs.shininess, 32.0f);
+
+        obj.flagSimulation->render();
+    }
+
+    glEnable(GL_CULL_FACE);
+
     //ROCK RENDERING
     if (m_bumpMapping.isInitialized()) {
         GLuint bumpShader = m_bumpMapping.getShader();
@@ -695,31 +732,9 @@ void Realtime::paintGL() {
                 glBindVertexArray(0);
             }
 
-            std::cout << "Rendered rocks with bump mapping" << std::endl;
         }
     }
 
-    // RENDER FLAGS
-    for (const TerrainObject& obj : m_terrainObjects) {
-        if (!obj.isFlag || !obj.flagSimulation) continue;
-
-        glm::mat4 fullModelMatrix = m_terrainWorldMatrix * obj.modelMatrix;
-
-        if (m_uniformLocs.model != -1) glUniformMatrix4fv(m_uniformLocs.model, 1, GL_FALSE, &fullModelMatrix[0][0]);
-
-        glm::mat4 mvp = terrainProjMatrix * terrainViewMatrix * fullModelMatrix;
-        if (m_uniformLocs.mvp != -1) glUniformMatrix4fv(m_uniformLocs.mvp, 1, GL_FALSE, &mvp[0][0]);
-
-        glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(fullModelMatrix)));
-        if (m_uniformLocs.ictm != -1) glUniformMatrix3fv(m_uniformLocs.ictm, 1, GL_FALSE, &normalMatrix[0][0]);
-
-        if (m_uniformLocs.cAmbient != -1) glUniform4fv(m_uniformLocs.cAmbient, 1, &obj.color[0]);
-        if (m_uniformLocs.cDiffuse != -1) glUniform4fv(m_uniformLocs.cDiffuse, 1, &obj.color[0]);
-        if (m_uniformLocs.cSpecular != -1) glUniform4f(m_uniformLocs.cSpecular, 0.5f, 0.5f, 0.5f, 1.0f);
-        if (m_uniformLocs.shininess != -1) glUniform1f(m_uniformLocs.shininess, 32.0f);
-
-        obj.flagSimulation->render();
-    }
     glUseProgram(0);
 }
 
@@ -922,7 +937,7 @@ void Realtime::mousePressEvent(QMouseEvent *event) {
                 } else if (m_placementMode == PlacementMode::LSYSTEM) {
                     placeLSystemOnTerrain(m_hitPoint.x, m_hitPoint.y,
                                           m_currentTreePreset,
-                                          5, 0.05f);
+                                          3, 0.1f);
                 } else if (m_placementMode == PlacementMode::ROCK) {
                     placeRockOnTerrain(m_hitPoint.x, m_hitPoint.y, 0.03f);
                 }else if (m_placementMode == PlacementMode::FLAG) {
@@ -1200,7 +1215,7 @@ void Realtime::placeLSystemOnTerrain(float terrainX, float terrainY,
     obj.currentIteration = startIteration;
     obj.maxIteration = maxIterations;
     obj.timeSincePlacement = 0.0f;
-    obj.growthInterval = 10.0f;  // 10 SECONDS CHANGE
+    obj.growthInterval = 5.0f;  // 10 SECONDS CHANGE
 
     glm::mat4 modelMatrix = glm::mat4(1.0f);
     modelMatrix = glm::translate(modelMatrix, glm::vec3(terrainX, terrainY, terrainHeight));
@@ -1385,22 +1400,23 @@ void Realtime::placeFlagOnTerrain(float terrainX, float terrainY, float size) {
 
     // Create flag simulation
     Flag* flag = new Flag();
-    glm::vec3 anchorPos = glm::vec3(terrainX, terrainY, terrainHeight);
-    flag->initialize(20, 15, 0.01f, anchorPos);  // 20x15 grid, 0.01 spacing
+    glm::vec3 anchorPos = glm::vec3(0.0f, 0.0f, 0.0f);
+    flag->initialize(20, 15, 0.01f, anchorPos);  // Smaller spacing: 0.01
 
     obj.flagSimulation = flag;
 
-    // Transformation matrix
+    // Transformation matrix - reasonable size
     glm::mat4 modelMatrix = glm::mat4(1.0f);
-    modelMatrix = glm::translate(modelMatrix, glm::vec3(terrainX, terrainY, terrainHeight));
+    modelMatrix = glm::translate(modelMatrix, glm::vec3(terrainX, terrainY, terrainHeight + 0.05f));  // Slight raise
+    modelMatrix = glm::scale(modelMatrix, glm::vec3(1.0f));  // Normal size: 1.0
     obj.modelMatrix = modelMatrix;
 
-    // Flag color (red, white, blue, etc.)
-    obj.color = glm::vec4(0.8f, 0.1f, 0.1f, 1.0f);  // Red flag
+    // Red flag
+    obj.color = glm::vec4(0.8f, 0.1f, 0.1f, 1.0f);
 
     obj.vao = flag->getVAO();
     obj.vbo = flag->getVBO();
-    obj.vertexCount = flag->getVertexCount();
+    obj.vertexCount = (20-1) * (15-1) * 6;
 
     m_terrainObjects.push_back(obj);
 
