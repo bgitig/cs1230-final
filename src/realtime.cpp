@@ -32,6 +32,7 @@ Realtime::Realtime(QWidget *parent)
     m_intersected = 0;
     m_showTerrain = true;
     m_placeObjectMode = false;
+    //m_currentModelIndex = -1;
 
     // If you must use this function, do not edit anything above this
 }
@@ -56,6 +57,45 @@ void Realtime::setUpBindings(std::vector<float> &shapeData, GLuint &vbo, GLuint 
 
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
+void Realtime::initializeBaseModel() {
+    // Load your OBJ file (adjust path as needed)
+    std::string modelPath = ":/images/Base.obj";
+
+    if (!OBJLoader::loadOBJ(modelPath, m_baseModel_data)) {
+        std::cerr << "Failed to load base model!" << std::endl;
+        return;
+    }
+
+    // Create VBO and VAO
+    glGenBuffers(1, &m_baseModel_vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, m_baseModel_vbo);
+    glBufferData(GL_ARRAY_BUFFER, m_baseModel_data.size() * sizeof(GLfloat),
+                 m_baseModel_data.data(), GL_STATIC_DRAW);
+
+    glGenVertexArrays(1, &m_baseModel_vao);
+    glBindVertexArray(m_baseModel_vao);
+
+    // Position attribute
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 6,
+                          reinterpret_cast<void*>(0));
+
+    // Normal attribute
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 6,
+                          reinterpret_cast<void*>(sizeof(GLfloat) * 3));
+
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+    // Position model under terrain
+    m_baseModelMatrix = glm::mat4(1.0f);
+    m_baseModelMatrix = glm::translate(m_baseModelMatrix, glm::vec3(0.5f, 0.575f, -0.1f)); // Adjust as needed
+    m_baseModelMatrix = glm::scale(m_baseModelMatrix, glm::vec3(1.0f, 1.0f, 1.0f)); // Adjust scale
+
+    std::cout << "Base model initialized successfully" << std::endl;
 }
 
 void Realtime::makeShapes() {
@@ -151,7 +191,7 @@ void Realtime::initializeGL() {
 
 
     // skybox!
-    //m_skybox.init();
+    m_skybox.init();
 
 
     // Shadow mapping initialization
@@ -187,7 +227,9 @@ void Realtime::initializeGL() {
         );
 
     initializeTerrain();
+
     cacheUniformLocations();
+    initializeBaseModel();
 }
 
 void Realtime::cacheUniformLocations() {
@@ -251,10 +293,13 @@ void Realtime::initializeTerrain() {
     m_terrainVbo.release();
 
     m_terrainWorld.setToIdentity();
+
+
+    m_terrainWorld.rotate(-45.0f, QVector3D(0, 0, 1));
     m_terrainWorld.translate(QVector3D(-0.5,-0.5,0));
 
     m_terrainCamera.setToIdentity();
-    m_terrainCamera.lookAt(QVector3D(1,1,1),QVector3D(0,0,0),QVector3D(0,0,1));
+    m_terrainCamera.lookAt(QVector3D(0,2,1),QVector3D(0,0,0),QVector3D(0,0,1));
 
     m_terrainProgram->release();
     rebuildTerrainMatrices();
@@ -482,17 +527,7 @@ GLsizei Realtime::typeInterpretVertices(PrimitiveType type) {
 }
 
 void Realtime::paintGL() {
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    // ========== SKYBOX =========
-    glDepthMask(GL_FALSE);  // Disable depth writing for skybox
-
-    // Use terrain camera matrices for skybox
-    glm::mat4 terrainViewMatrix = glm::mat4(1.0f);
-    glm::mat4 terrainProjMatrix = glm::mat4(1.0f);
-
-
-    // ========== SHADOW PASS ==========
+    // ========== SHADOW PASS (FIRST) ==========
     glm::vec3 lightPos = glm::vec3(-2.0f, 4.0f, -1.0f);
     glm::mat4 lightProjection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, 1.0f, 7.5f);
     glm::mat4 lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));
@@ -519,7 +554,7 @@ void Realtime::paintGL() {
         glBindVertexArray(0);
     }
 
-    // SARYA: Shadow pass for terrain objects - update if needed
+    // Shadow pass for terrain objects
     for (const TerrainObject& obj : m_terrainObjects) {
         if (m_depthUniformLocs.model != -1) {
             glUniformMatrix4fv(m_depthUniformLocs.model, 1, GL_FALSE, &obj.modelMatrix[0][0]);
@@ -529,15 +564,43 @@ void Realtime::paintGL() {
         glBindVertexArray(0);
     }
 
-
+    if (m_baseModel_data.size() > 0) {
+        glm::mat4 fullModelMatrix = m_terrainWorldMatrix * m_baseModelMatrix;
+        if (m_depthUniformLocs.model != -1) {
+            glUniformMatrix4fv(m_depthUniformLocs.model, 1, GL_FALSE, &fullModelMatrix[0][0]);
+        }
+        glBindVertexArray(m_baseModel_vao);
+        glDrawArrays(GL_TRIANGLES, 0, m_baseModel_data.size() / 6);
+        glBindVertexArray(0);
+    }
 
     // ========== MAIN SCENE RENDER ==========
     glBindFramebuffer(GL_FRAMEBUFFER, defaultFramebufferObject());
     glViewport(0, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    glUseProgram(m_shader);
+    // ========== SKYBOX RENDERING (AFTER CLEAR, BEFORE TERRAIN) ==========
+    glDepthMask(GL_FALSE);  // Disable depth writing for skybox
 
+    if (m_showTerrain) {
+        // Use terrain camera for skybox when in terrain mode
+        glm::mat4 terrainViewMatrix = glm::mat4(1.0f);
+        glm::mat4 terrainProjMatrix = glm::mat4(1.0f);
+
+        for (int i = 0; i < 4; ++i) {
+            for (int j = 0; j < 4; ++j) {
+                terrainViewMatrix[i][j] = m_terrainCamera(j, i);
+                terrainProjMatrix[i][j] = m_terrainProj(j, i);
+            }
+        }
+
+        m_skybox.render(&terrainViewMatrix[0][0], &terrainProjMatrix[0][0]);
+    } else {
+        // Use regular scene camera for skybox
+        m_skybox.render(&m_view[0][0], &m_proj[0][0]);
+    }
+
+    glDepthMask(GL_TRUE);  // Re-enable depth writing
 
     // ========== TERRAIN RENDERING ==========
     if (m_showTerrain) {
@@ -558,13 +621,12 @@ void Realtime::paintGL() {
         m_terrainProgram->release();
     }
 
-    // ========== SARYA: OBJECTS ON SAND RENDERING - UPDATE SHADER IF NECESSARY ==========
-    // Use the main shader for terrain objects
+    // ========== OBJECTS ON TERRAIN RENDERING ==========
     glUseProgram(m_shader);
 
     // Convert QMatrix4x4 to glm::mat4 for terrain camera matrices
-     terrainViewMatrix = glm::mat4(1.0f);
-     terrainProjMatrix = glm::mat4(1.0f);
+    glm::mat4 terrainViewMatrix = glm::mat4(1.0f);
+    glm::mat4 terrainProjMatrix = glm::mat4(1.0f);
 
     // Copy the QMatrix4x4 values to glm::mat4
     for (int i = 0; i < 4; ++i) {
@@ -581,18 +643,18 @@ void Realtime::paintGL() {
     if (m_uniformLocs.view != -1) glUniformMatrix4fv(m_uniformLocs.view, 1, GL_FALSE, &terrainViewMatrix[0][0]);
     if (m_uniformLocs.projection != -1) glUniformMatrix4fv(m_uniformLocs.projection, 1, GL_FALSE, &terrainProjMatrix[0][0]);
 
-    // Set other uniforms (same as before)
+    // Set other uniforms
     if (m_uniformLocs.lightSpaceMatrix != -1) glUniformMatrix4fv(m_uniformLocs.lightSpaceMatrix, 1, GL_FALSE, &m_lightSpaceMatrix[0][0]);
     if (m_uniformLocs.lightPos != -1) glUniform3fv(m_uniformLocs.lightPos, 1, &lightPos[0]);
     if (m_uniformLocs.cameraPos != -1) {
         // Get camera position from terrain camera
-        QVector3D eye = m_terrainCamera * QVector3D(0, 0, 0); // Camera position in world space
+        QVector3D eye = m_terrainCamera * QVector3D(0, 0, 0);
         glm::vec4 camPosVec(eye.x(), eye.y(), eye.z(), 1.0f);
         glUniform4fv(m_uniformLocs.cameraPos, 1, &camPosVec[0]);
     }
     if (m_uniformLocs.ka != -1) glUniform1f(m_uniformLocs.ka, renderData.globalData.ka);
-    if (m_uniformLocs.kd != -1) glUniform1f(m_uniformLocs.kd, 0.8f); // Use a default value
-    if (m_uniformLocs.ks != -1) glUniform1f(m_uniformLocs.ks, 0.5f); // Use a default value
+    if (m_uniformLocs.kd != -1) glUniform1f(m_uniformLocs.kd, 0.8f);
+    if (m_uniformLocs.ks != -1) glUniform1f(m_uniformLocs.ks, 0.5f);
 
     // Bind shadow map
     glActiveTexture(GL_TEXTURE0);
@@ -601,7 +663,7 @@ void Realtime::paintGL() {
         glUniform1i(m_uniformLocs.shadowMap, 0);
     }
 
-    // SARYA - RENDER TERRAIN OBJS - CHANGE IF NEEDED
+    // Render terrain objects
     for (const TerrainObject& obj : m_terrainObjects) {
         glBindVertexArray(obj.vao);
 
@@ -622,6 +684,30 @@ void Realtime::paintGL() {
         if (m_uniformLocs.cReflective != -1) glUniform4f(m_uniformLocs.cReflective, 0.0f, 0.0f, 0.0f, 0.0f);
 
         glDrawArrays(GL_TRIANGLES, 0, obj.vertexCount);
+        glBindVertexArray(0);
+    }
+
+    if (m_baseModel_data.size() > 0) {
+        glBindVertexArray(m_baseModel_vao);
+
+        glm::mat4 fullModelMatrix = m_terrainWorldMatrix * m_baseModelMatrix;
+
+        if (m_uniformLocs.model != -1) glUniformMatrix4fv(m_uniformLocs.model, 1, GL_FALSE, &fullModelMatrix[0][0]);
+
+        glm::mat4 mvp = terrainProjMatrix * terrainViewMatrix * fullModelMatrix;
+        if (m_uniformLocs.mvp != -1) glUniformMatrix4fv(m_uniformLocs.mvp, 1, GL_FALSE, &mvp[0][0]);
+
+        glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(fullModelMatrix)));
+        if (m_uniformLocs.ictm != -1) glUniformMatrix3fv(m_uniformLocs.ictm, 1, GL_FALSE, &normalMatrix[0][0]);
+
+        // Set a distinctive color for the base
+        glm::vec4 baseColor = glm::vec4(0.4f, 0.3f, 0.2f, 1.0f); // Brown/rocky color
+        if (m_uniformLocs.cAmbient != -1) glUniform4fv(m_uniformLocs.cAmbient, 1, &baseColor[0]);
+        if (m_uniformLocs.cDiffuse != -1) glUniform4fv(m_uniformLocs.cDiffuse, 1, &baseColor[0]);
+        if (m_uniformLocs.cSpecular != -1) glUniform4f(m_uniformLocs.cSpecular, 0.2f, 0.2f, 0.2f, 1.0f);
+        if (m_uniformLocs.shininess != -1) glUniform1f(m_uniformLocs.shininess, 16.0f);
+
+        glDrawArrays(GL_TRIANGLES, 0, m_baseModel_data.size() / 6);
         glBindVertexArray(0);
     }
 

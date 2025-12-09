@@ -50,8 +50,11 @@ add_executable(${PROJECT_NAME}
     src/terrain.h src/terrain.cpp
     src/mouse.h src/mouse.cpp
     src/skybox.h src/skybox.cpp
-    src/stb_image.h
     src/sky.qrc
+    src/objloader.h src/objloader.cpp
+    src/terrainmodel.h src/terrainmodel.cpp
+
+
 
 
 )

@@ -1,5 +1,13 @@
 <RCC>
     <qresource prefix="/images">
-        <file>sky.jpg</file>
+        <file>bottom.jpg</file>
+        <file>front.jpg</file>
+        <file>right.jpg</file>
+        <file>top.jpg</file>
+        <file>back.jpg</file>
+        <file>left.jpg</file>
+        <file>Untitled.obj</file>
+        <file>Base1.obj</file>
+        <file>Base.obj</file>
     </qresource>
 </RCC>

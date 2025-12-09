@@ -23,6 +23,7 @@
 #include "utils/cylinder.h"
 #include "utils/shaderloader.h"
 #include "terrain.h"
+#include "objloader.h"
 #include "skybox.h"
 
 
@@ -59,6 +60,18 @@ public:
 
     // Clear all terrain objects
     void clearTerrainObjects();
+
+    // Load a Blender OBJ model
+    int loadTerrainModel(const std::string& filepath);
+
+    // Place the currently selected model on terrain
+    void placeModelOnTerrain(float terrainX, float terrainY, float scale = 0.1f);
+
+    // Switch to model placement mode
+    void setModelPlacementMode(int modelIndex);
+
+    // Update all terrain models when terrain changes
+    void updateAllTerrainModels();
 
 public slots:
     void tick(QTimerEvent* event);
@@ -224,4 +237,11 @@ private:
 
     // skybox
     skybox m_skybox;
+
+    // Base model (under terrain)
+    std::vector<float> m_baseModel_data;
+    GLuint m_baseModel_vbo;
+    GLuint m_baseModel_vao;
+    glm::mat4 m_baseModelMatrix;
+    void initializeBaseModel();
 };
