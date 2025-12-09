@@ -24,7 +24,10 @@
 #include "utils/shaderloader.h"
 #include "terrain.h"
 #include "skybox.h"
-
+#include "treemanager.h"
+#include "rockgenerator.h"
+#include "bumpmapping.h"
+#include "flag.h"
 
 class Realtime : public QOpenGLWidget
 {
@@ -49,6 +52,22 @@ public:
         GLuint vbo;                   // Vertex buffer object
         GLuint vao;                   // Vertex array object
         GLsizei vertexCount;          // Number of vertices
+
+        bool isLSystem;               // Flag to identify L-system objects
+        std::string lSystemPreset;    // Which tree preset to use
+
+        //Tree growth parameters
+        int currentIteration;
+        int maxIteration;
+        float timeSincePlacement;
+        float growthInterval;
+
+        //rock
+        bool isRock;
+
+        //flag
+        bool isFlag;
+        Flag* flagSimulation;
     };
 
     std::vector<TerrainObject> m_terrainObjects;
@@ -60,6 +79,17 @@ public:
     // Clear all terrain objects
     void clearTerrainObjects();
 
+    //Tree Manager
+    void placeLSystemOnTerrain(float terrainX, float terrainY,
+                               const std::string& preset,
+                               int iterations,
+                               float size);
+    //Rock Manager
+    void placeRockOnTerrain(float terrainX, float terrainY, float size = 0.05f);
+
+    //Flag
+    void placeFlagOnTerrain(float terrainX, float terrainY, float size = 0.05f);
+
 public slots:
     void tick(QTimerEvent* event);
 
@@ -69,6 +99,15 @@ protected:
     void resizeGL(int width, int height) override;
 
 private:
+    //Object placement mode - new added to keep track
+    enum class PlacementMode {
+        PRIMITIVE,
+        LSYSTEM,
+        ROCK,
+        FLAG
+    };
+    PlacementMode m_placementMode = PlacementMode::PRIMITIVE;
+
     void keyPressEvent(QKeyEvent *event) override;
     void keyReleaseEvent(QKeyEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
@@ -224,4 +263,13 @@ private:
 
     // skybox
     skybox m_skybox;
+
+    //Tree stuff
+    TreeManager m_treeManager;
+    std::string m_currentTreePreset = "Simple";
+    void growTree(TerrainObject& obj);
+
+    //Rock
+    RockGenerator m_rockGenerator;
+    BumpMapping m_bumpMapping;
 };
