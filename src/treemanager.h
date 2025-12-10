@@ -26,6 +26,10 @@ public:
     const std::vector<float>& getVertexData() const {
         return m_treeGenerator.getVertexData();
     }
+
+    //wind parameter
+    float getWindTime() const { return m_windTime; }
+    void updateWind(float deltaTime) { m_windTime += deltaTime; }
 private:
     void uploadToGPU();
     GLuint m_vao;
@@ -34,4 +38,7 @@ private:
     bool m_hasTree;
     bool m_glInitialized;
     TreeBase m_treeGenerator;
+
+    //wind parameter
+    float m_windTime;
 };
