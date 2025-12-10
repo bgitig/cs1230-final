@@ -2,6 +2,10 @@
 
 out vec4 FragColor;
 
+layout (location = 0) out vec4 sceneColor;
+layout (location = 1) out vec4 hdrColor;
+layout (location = 2) out vec4 occColor;
+
 in vec3 FragPos;
 in vec3 Normal;
 in vec4 FragPosLightSpace;
@@ -191,5 +195,14 @@ void main() {
             color = vec3(0.0, 0.0, 0.0);
         }
 
-        FragColor = vec4(color, 1.0);
+        sceneColor = FragColor;
+        float brightness = dot(FragColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+        if(brightness > 1.0)
+            hdrColor = FragColor;
+        else
+            hdrColor = vec4(0.0, 0.0, 0.0, 1.0);
+
+        occColor = vec4(1,1,1,1);
+
+
 }

@@ -215,6 +215,11 @@ void Realtime::initializeGL() {
 
     glClearColor(0,0,0,1);
     m_shader = ShaderLoader::createShaderProgram(":/resources/shaders/default.vert", ":/resources/shaders/default.frag");
+
+    bloomShader = ShaderLoader::createShaderProgram(":/resources/shaders/bloom.vert", ":/resources/shaders/bloom.frag");
+    godraysShader = ShaderLoader::createShaderProgram(":/resources/shaders/godrays.vert", ":/resources/shaders/godrays.frag");
+    fogShader = ShaderLoader::createShaderProgram(":/resources/shaders/fog.vert", ":/resources/shaders/fog.frag");
+
     setUp();
 
 
@@ -255,6 +260,8 @@ void Realtime::initializeGL() {
         ":/resources/shaders/shadows.frag"
         );
 
+    defaultFBO = 5;
+
     // Initialize preprocessing FBO
     glGenFramebuffers(1, &m_preprocessFBO);
     glBindFramebuffer(GL_FRAMEBUFFER, m_preprocessFBO);
@@ -268,8 +275,36 @@ void Realtime::initializeGL() {
                  0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    // hdr tex for bloom
+    glGenTextures(1, &hdrTex);
+    glBindTexture(GL_TEXTURE_2D, hdrTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m_fbo_width, m_fbo_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    // occlusion tex for godrays
+    glGenTextures(1, &occTex);
+    glBindTexture(GL_TEXTURE_2D, occTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m_fbo_width, m_fbo_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    // depth tex for fog
+    glGenTextures(1, &depthTex);
+    glBindTexture(GL_TEXTURE_2D, depthTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, m_fbo_width, m_fbo_height, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
                            GL_TEXTURE_2D, m_preprocessTexture, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, hdrTex, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, occTex, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthTex, 0);
 
     // Create depth renderbuffer
     glGenRenderbuffers(1, &m_preprocessDepthRBO);
@@ -280,11 +315,71 @@ void Realtime::initializeGL() {
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
                               GL_RENDERBUFFER, m_preprocessDepthRBO);
 
+    attachments[0] = GL_COLOR_ATTACHMENT0;
+    attachments[1] = GL_COLOR_ATTACHMENT1;
+    attachments[2] = GL_COLOR_ATTACHMENT2;
+    glDrawBuffers(3, attachments);
+
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
         std::cerr << "ERROR: Preprocessing framebuffer is not complete!" << std::endl;
     }
 
+    // bloom fbo
+    glGenFramebuffers(2, bloomFBO);
+    glGenTextures(2, bloomTex);
+    for (int i = 0; i < 2; i++)
+    {
+        glBindFramebuffer(GL_FRAMEBUFFER, bloomFBO[i]);
+        glBindTexture(GL_TEXTURE_2D, bloomTex[i]);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, m_fbo_width, m_fbo_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, bloomTex[i], 0);
+        glBindFramebuffer(GL_FRAMEBUFFER, defaultFBO);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+
+    // godrays fbo
+    glGenTextures(1, &godraysTex);
+    glBindTexture(GL_TEXTURE_2D, godraysTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m_fbo_width, m_fbo_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    glGenFramebuffers(1, &godraysFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, godraysFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, godraysTex, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, defaultFBO);
+
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    // screen quad info
+    std::vector<GLfloat> fullscreen_quad_data =
+        { //     POSITIONS    //
+            -1.f,  1.f, 0.0f, 0,1.f,
+            -1.f, -1.f, 0.0f, 0,0,
+            1.f, -1.f, 0.0f, 1.f,0,
+            1.f,  1.f, 0.0f, 1.f,1.f,
+            -1.f,  1.f, 0.0f, 0,1.f,
+            1.f, -1.f, 0.0f, 1.f,0
+        };
+
+    glGenBuffers(1, &m_fullscreen_vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, m_fullscreen_vbo);
+    glBufferData(GL_ARRAY_BUFFER, fullscreen_quad_data.size()*sizeof(GLfloat), fullscreen_quad_data.data(), GL_STATIC_DRAW);
+    glGenVertexArrays(1, &m_fullscreen_vao);
+    glBindVertexArray(m_fullscreen_vao);
+
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), reinterpret_cast<void*>(0));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), reinterpret_cast<void*>(sizeof(GLfloat)*3));
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
 
     initializeTerrain();
 
@@ -953,18 +1048,95 @@ void Realtime::paintGL() {
         glDisable(GL_BLEND);
     }
 
-    glBindFramebuffer(GL_FRAMEBUFFER, m_preprocessFBO);
+    // BLOOM PASS
+    bool horizontal = true;
+    bool first = true;
+    int amount = 10;
+    glUseProgram(bloomShader);
+    for (int i = 0; i < amount; i++) {
+        glBindFramebuffer(GL_FRAMEBUFFER, bloomFBO[horizontal]);
 
-    //copy to default
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, defaultFramebufferObject());
-    glBlitFramebuffer(
-        0, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio,
-        0, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio,
-        GL_COLOR_BUFFER_BIT, GL_NEAREST
-        );
+        glUniform1i(glGetUniformLocation(bloomShader, "horizontal"), horizontal);
+        glBindVertexArray(m_fullscreen_vao);
 
-    // restore
-    glBindFramebuffer(GL_FRAMEBUFFER, defaultFramebufferObject());
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, first ? hdrTex : bloomTex[!horizontal]);
+        glUniform1i(glGetUniformLocation(bloomShader, "image"), 0);
+
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+
+        horizontal = !horizontal;
+        if (first) {
+            first = false;
+        }
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+
+    // GODRAYS PASS
+    glBindFramebuffer(GL_FRAMEBUFFER, godraysFBO);
+
+    glViewport(0, 0, size().width()*2.f*m_devicePixelRatio,size().height()*2.f*m_devicePixelRatio);
+    glUseProgram(godraysShader);
+    glBindVertexArray(m_fullscreen_vao);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, m_preprocessTexture);
+    glUniform1i(glGetUniformLocation(godraysShader, "sceneTex"), 0);
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, occTex);
+    glUniform1i(glGetUniformLocation(godraysShader, "occTex"), 1);
+
+    // TODO: when parsing, set m_lightPos only if a godray flag is true
+    glm::vec4 clip = m_proj * m_view * godrayLightPos;
+    glm::vec3 ndc = glm::vec3(clip) / clip.w;
+    glm::vec2 screen = (glm::vec2(ndc) * 0.5f) + 0.5f;
+    glUniform2f(glGetUniformLocation(godraysShader,"lightScreenPos"), screen.x, screen.y);
+    glUniform1f(glGetUniformLocation(godraysShader,"exposure"), 0.03f);
+    glUniform1f(glGetUniformLocation(godraysShader,"decay"), 0.95f);
+    glUniform1f(glGetUniformLocation(godraysShader,"density"), 1.2f);
+    glUniform1f(glGetUniformLocation(godraysShader,"weight"), .75f);
+    glUniform1i(glGetUniformLocation(godraysShader,"NUM_SAMPLES"), 200);
+
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, defaultFBO);
+
+    glUseProgram(fogShader);
+
+    glBindVertexArray(m_fullscreen_vao);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, m_preprocessTexture);
+    glUniform1i(glGetUniformLocation(fogShader, "scene"), 0);
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, depthTex);
+    glUniform1i(glGetUniformLocation(fogShader, "depth"), 1);
+
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, bloomTex[!horizontal]);
+    glUniform1i(glGetUniformLocation(fogShader, "bloom"), 2);
+
+    glActiveTexture(GL_TEXTURE3);
+    glBindTexture(GL_TEXTURE_2D, godraysTex);
+    glUniform1i(glGetUniformLocation(fogShader, "godrays"), 3);
+
+    glUniform1f(glGetUniformLocation(fogShader, "near"), nearFog);
+    glUniform1f(glGetUniformLocation(fogShader, "far"), farFog);
+
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+
+    // //copy to default
+    // glBindFramebuffer(GL_DRAW_FRAMEBUFFER, defaultFramebufferObject());
+    // glBlitFramebuffer(
+    //     0, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio,
+    //     0, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio,
+    //     GL_COLOR_BUFFER_BIT, GL_NEAREST
+    //     );
+
+    // // restore
+    // glBindFramebuffer(GL_FRAMEBUFFER, defaultFramebufferObject());
     glUseProgram(0);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, 0);
