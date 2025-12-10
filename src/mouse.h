@@ -1,7 +1,11 @@
 #ifndef MOUSE_H
 #define MOUSE_H
 #include "glm/glm.hpp"
+#include <GL/glew.h>
 #include <iostream>
+#include <optional>
+#include <vector>
+
 
 class mouse
 {

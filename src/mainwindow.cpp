@@ -73,10 +73,10 @@ void MainWindow::initialize() {
     // rakeMode  = makeTextButton("Rake");
     // camMode = makeTextButton("Cam");
 
-    treeMode  = makeIconButton("/cs1230/proj5-bgitig/src/assets/tree.svg");
-    rockMode  = makeIconButton("/cs1230/proj5-bgitig/src/assets/rock.svg");
-    rakeMode  = makeIconButton("/cs1230/proj5-bgitig/src/assets/rake.svg");
-    camMode  = makeIconButton("/cs1230/proj5-bgitig/src/assets/cam.svg");
+    treeMode  = makeIconButton("/cs1230/cs1230-final/svg/tree.svg");
+    rockMode  = makeIconButton("/cs1230/cs1230-final/svg/rock.svg");
+    rakeMode  = makeIconButton("/cs1230/cs1230-final/svg/rake.svg");
+    camMode  = makeIconButton("/cs1230/cs1230-final/svg/cam.svg");
 
 
     QButtonGroup *group = new QButtonGroup(this);

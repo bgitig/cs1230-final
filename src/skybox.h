@@ -6,7 +6,16 @@
 #include <glm/glm.hpp>
 #include <vector>
 #include <string>
-#include <OpenGL/gl.h>
+// #include <OpenGL/gl.h>
+
+#ifdef _WIN32
+#include <GL/gl.h>        // Windows + MinGW
+#elif __APPLE__
+#include <OpenGL/gl.h>    // macOS
+#else
+#include <GL/gl.h>        // Linux fallback
+#endif
+
 
 class skybox {
 public:
