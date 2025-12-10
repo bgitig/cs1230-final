@@ -187,6 +187,10 @@ void Realtime::finish() {
         m_particles = nullptr;
     }
 
+    glDeleteTextures(1, &m_preprocessTexture);
+    glDeleteRenderbuffers(1, &m_preprocessDepthRBO);
+    glDeleteFramebuffers(1, &m_preprocessFBO);
+
     m_terrainObjects.clear();
     m_bumpMapping.cleanup();
     this->doneCurrent();
@@ -951,6 +955,7 @@ void Realtime::paintGL() {
 
     glBindFramebuffer(GL_FRAMEBUFFER, m_preprocessFBO);
 
+    //copy to default
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, defaultFramebufferObject());
     glBlitFramebuffer(
         0, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio,
@@ -958,7 +963,7 @@ void Realtime::paintGL() {
         GL_COLOR_BUFFER_BIT, GL_NEAREST
         );
 
-    // Restore state
+    // restore
     glBindFramebuffer(GL_FRAMEBUFFER, defaultFramebufferObject());
     glUseProgram(0);
     glActiveTexture(GL_TEXTURE0);
@@ -966,10 +971,14 @@ void Realtime::paintGL() {
 }
 
 void Realtime::resizeGL(int w, int h) {
-    glViewport(0, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio);
-    m_w = w;
-    m_h = h;
-    rebuildTerrainMatrices();
+    glBindTexture(GL_TEXTURE_2D, m_preprocessTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
+                 w * m_devicePixelRatio, h * m_devicePixelRatio,
+                 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+
+    glBindRenderbuffer(GL_RENDERBUFFER, m_preprocessDepthRBO);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24,
+                          w * m_devicePixelRatio, h * m_devicePixelRatio);
 }
 
 void Realtime::updateCamera() {
