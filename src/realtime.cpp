@@ -98,6 +98,8 @@ void Realtime::initializeBaseModel() {
     std::cout << "Base model initialized successfully" << std::endl;
 }
 
+
+
 void Realtime::makeShapes() {
     m_sphere_data = Sphere(settings.shapeParameter1,settings.shapeParameter2).getVertexData();
     m_cone_data = Cone(settings.shapeParameter1,settings.shapeParameter2).getVertexData();
@@ -204,6 +206,7 @@ void Realtime::initializeGL() {
 
     glGenTextures(1, &m_depthMap);
     glBindTexture(GL_TEXTURE_2D, m_depthMap);
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_DEPTH_COMPONENT24, SHADOW_WIDTH, SHADOW_HEIGHT);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT,
                  SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
 
@@ -384,6 +387,18 @@ void Realtime::updateAffectedTiles(float x, float y, float radius) {
 // ========== SARYA: TERRAIN OBJECT PLACEMENT SYSTEM - REPLACE THIS CODE AS NEEDED ==========
 
 void Realtime::placeObjectOnTerrain(float terrainX, float terrainY, PrimitiveType type, float size) {
+    std::vector<float> vertexData = getVertexDataForType(type);
+
+    if (vertexData.empty()) {
+        std::cerr << "Error: Empty vertex data for object type " << static_cast<int>(type) << std::endl;
+        return;
+    }
+
+    if (vertexData.size() == 0) {
+        std::cerr << "Error: No vertices for object type " << static_cast<int>(type) << std::endl;
+        return;
+    }
+
     // Clamp to terrain bounds
     terrainX = glm::clamp(terrainX, 0.0f, 1.0f);
     terrainY = glm::clamp(terrainY, 0.0f, 1.0f);
@@ -434,7 +449,7 @@ void Realtime::placeObjectOnTerrain(float terrainX, float terrainY, PrimitiveTyp
         );
 
     // Get appropriate vertex data based on type
-    std::vector<float> vertexData = getVertexDataForType(type);
+  //  std::vector<float> vertexData = getVertexDataForType(type);
 
     if (vertexData.empty()) {
         std::cerr << "Failed to get vertex data for object type" << std::endl;
@@ -461,9 +476,23 @@ void Realtime::placeObjectOnTerrain(float terrainX, float terrainY, PrimitiveTyp
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
+    if (vbo == 0 || vao == 0) {
+        std::cerr << "Error: Failed to create OpenGL buffers" << std::endl;
+        if (vbo != 0) glDeleteBuffers(1, &vbo);
+        if (vao != 0) glDeleteVertexArrays(1, &vao);
+        return;
+    }
+
     obj.vbo = vbo;
     obj.vao = vao;
     obj.vertexCount = vertexData.size() / 6;
+
+    if (obj.vertexCount <= 0) {
+        std::cerr << "Error: Invalid vertex count: " << obj.vertexCount << std::endl;
+        glDeleteBuffers(1, &vbo);
+        glDeleteVertexArrays(1, &vao);
+        return;
+    }
 
     m_terrainObjects.push_back(obj);
 
@@ -574,6 +603,8 @@ void Realtime::paintGL() {
         if (m_depthUniformLocs.model != -1) {
             glUniformMatrix4fv(m_depthUniformLocs.model, 1, GL_FALSE, &obj.modelMatrix[0][0]);
         }
+
+
         glBindVertexArray(obj.vao);
         glDrawArrays(GL_TRIANGLES, 0, obj.vertexCount);
         glBindVertexArray(0);
@@ -1404,7 +1435,14 @@ void Realtime::placeRockOnTerrain(float terrainX, float terrainY, float size) {
     int vertexCount = m_rockGenerator.getVertexCount();
 
     if (rockVertexData.empty() || vertexCount == 0) {
-        std::cerr << "ERROR: Rock generation failed!" << std::endl;
+        std::cerr << "ERROR: Rock generation failed! Vertex data empty." << std::endl;
+        return;
+    }
+
+    // Calculate actual number of vertices (9 floats per vertex)
+    int actualVertexCount = rockVertexData.size() / 9;
+    if (actualVertexCount <= 0) {
+        std::cerr << "ERROR: Invalid rock vertex count: " << actualVertexCount << std::endl;
         return;
     }
 
@@ -1446,17 +1484,17 @@ void Realtime::placeRockOnTerrain(float terrainX, float terrainY, float size) {
 
     glBindVertexArray(vao);
 
-    // Position (location 0)
+    // Position (location 0) - 3 floats
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 9,
                           reinterpret_cast<void *>(0));
 
-    // Normal (location 1)
+    // Normal (location 1) - 3 floats
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 9,
                           reinterpret_cast<void *>(sizeof(GLfloat) * 3));
 
-    // Tangent (location 2)
+    // Tangent (location 2) - 3 floats
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 9,
                           reinterpret_cast<void *>(sizeof(GLfloat) * 6));
@@ -1464,14 +1502,23 @@ void Realtime::placeRockOnTerrain(float terrainX, float terrainY, float size) {
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
+    if (vbo == 0 || vao == 0) {
+        std::cerr << "Error: Failed to create OpenGL buffers for rock" << std::endl;
+        if (vbo != 0) glDeleteBuffers(1, &vbo);
+        if (vao != 0) glDeleteVertexArrays(1, &vao);
+        return;
+    }
+
     obj.vbo = vbo;
     obj.vao = vao;
-    obj.vertexCount = vertexCount;
+    obj.vertexCount = actualVertexCount;  // Store actual vertex count
 
     m_terrainObjects.push_back(obj);
 
-    std::cout << "Placed rock with detail level " << randomDetail << " at terrain ("
-              << terrainX << ", " << terrainY << ")" << std::endl;
+    std::cout << "Placed rock with detail level " << randomDetail
+              << " at terrain (" << terrainX << ", " << terrainY << ")"
+              << " vertices: " << obj.vertexCount
+              << " total floats: " << rockVertexData.size() << std::endl;
 
     update();
 }
