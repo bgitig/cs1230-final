@@ -19,60 +19,29 @@ public:
 
 private:
     void connectUIElements();
-    void connectParam1();
-    void connectParam2();
-    void connectNear();
-    void connectFar();
 
-    // From old Project 6
-    // void connectPerPixelFilter();
-    // void connectKernelBasedFilter();
+    void connectTreeMode();
+    void connectRockMode();
+    void connectRakeMode();
+    void connectCamMode();
 
-    void connectUploadFile();
-    void connectSaveImage();
-    void connectExtraCredit();
+
 
     Realtime *realtime;
     AspectRatioWidget *aspectRatioWidget;
 
-    // From old Project 6
-    // QCheckBox *filter1;
-    // QCheckBox *filter2;
+    QPushButton *treeMode;
+    QPushButton *rockMode;
+    QPushButton *rakeMode;
+    QPushButton *camMode;
 
-    QPushButton *uploadFile;
-    QPushButton *saveImage;
-    QSlider *p1Slider;
-    QSlider *p2Slider;
-    QSpinBox *p1Box;
-    QSpinBox *p2Box;
-    QSlider *nearSlider;
-    QSlider *farSlider;
-    QDoubleSpinBox *nearBox;
-    QDoubleSpinBox *farBox;
 
-    // Extra Credit:
-    QCheckBox *ec1;
-    QCheckBox *ec2;
-    QCheckBox *ec3;
-    QCheckBox *ec4;
 
 private slots:
-    // From old Project 6
-    // void onPerPixelFilter();
-    // void onKernelBasedFilter();
 
-    void onUploadFile();
-    void onSaveImage();
-    void onValChangeP1(int newValue);
-    void onValChangeP2(int newValue);
-    void onValChangeNearSlider(int newValue);
-    void onValChangeFarSlider(int newValue);
-    void onValChangeNearBox(double newValue);
-    void onValChangeFarBox(double newValue);
+    void onTreeMode();
+    void onRockMode();
+    void onRakeMode();
+    void onCamMode();
 
-    // Extra Credit:
-    void onExtraCredit1();
-    void onExtraCredit2();
-    void onExtraCredit3();
-    void onExtraCredit4();
 };
