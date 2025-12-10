@@ -152,8 +152,8 @@ void turtle::drawCylinder(const glm::vec3& start, const glm::vec3& end, float ra
         float angle1 = i * angleStep;
         float angle2 = (i + 1) * angleStep;
 
-        glm::vec3 offset1 = radius * (cos(angle1) * perp1 + sin(angle1) * perp2);
-        glm::vec3 offset2 = radius * (cos(angle2) * perp1 + sin(angle2) * perp2);
+        glm::vec3 offset1 = radius * ((float)cos(angle1) * perp1 + (float)sin(angle1) * perp2);
+        glm::vec3 offset2 = radius * ((float)cos(angle2) * perp1 + (float)sin(angle2) * perp2);
 
         glm::vec3 p1 = start + offset1;
         glm::vec3 p2 = start + offset2;
