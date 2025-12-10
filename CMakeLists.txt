@@ -60,6 +60,7 @@ add_executable(${PROJECT_NAME}
     src/bumpmapping.h src/bumpmapping.cpp
     src/rockgenerator.h src/rockgenerator.cpp
     src/flag.h src/flag.cpp
+    src/particles.h src/particles.cpp
 
 
 )

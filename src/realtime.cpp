@@ -817,6 +817,7 @@ void Realtime::paintGL() {
     if (m_bumpMapping.isInitialized()) {
         GLuint bumpShader = m_bumpMapping.getShader();
 
+
         if (bumpShader != 0) {
             glUseProgram(bumpShader);
 
@@ -1260,7 +1261,6 @@ void Realtime::timerEvent(QTimerEvent *event) {
 }
 
 void Realtime::saveViewportImage(std::string filePath) {
-    makeCurrent();
 
     int fixedWidth = 1024;
     int fixedHeight = 768;
@@ -1421,8 +1421,10 @@ void Realtime::growTree(TerrainObject& obj) {
 }
 
 void Realtime::placeRockOnTerrain(float terrainX, float terrainY, float size) {
+
     terrainX = glm::clamp(terrainX, 0.0f, 1.0f);
     terrainY = glm::clamp(terrainY, 0.0f, 1.0f);
+
 
     float terrainHeight = m_terrain.getHeight(terrainX, terrainY);
 
@@ -1519,7 +1521,6 @@ void Realtime::placeRockOnTerrain(float terrainX, float terrainY, float size) {
               << " at terrain (" << terrainX << ", " << terrainY << ")"
               << " vertices: " << obj.vertexCount
               << " total floats: " << rockVertexData.size() << std::endl;
-
     update();
 }
 
