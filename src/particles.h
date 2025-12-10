@@ -29,11 +29,15 @@ class Particles : public QOpenGLWidget {
 public:
     explicit Particles(QWidget *parent = nullptr);
     ~Particles();
+    void triggerBurst(const glm::vec3& position);
+    void setTerrainMatrices(const glm::mat4& view, const glm::mat4& proj, const glm::mat4& world);
+    void initializeGL() override;
+    void paintGL() override;
 
 protected:
-    void initializeGL() override;
+
     void resizeGL(int w, int h) override;
-    void paintGL() override;
+
     void mouseMoveEvent(QMouseEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
 
@@ -77,6 +81,12 @@ private:
 
     glm::mat4 m_projectionMatrix;
     glm::mat4 m_viewMatrix;
+
+
+    glm::mat4 m_externalViewMatrix;
+    glm::mat4 m_externalProjMatrix;
+    glm::mat4 m_externalWorldMatrix;
+    bool m_useExternalMatrices;
 };
 
 #endif // Particles_H

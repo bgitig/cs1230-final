@@ -9,6 +9,7 @@
 #include "mouse.h"
 #include "terrain.h"
 
+
 // ================== Rendering the Scene!
 
 Realtime::Realtime(QWidget *parent)
@@ -98,7 +99,17 @@ void Realtime::initializeBaseModel() {
     std::cout << "Base model initialized successfully" << std::endl;
 }
 
+void Realtime::triggerParticleBurst(float worldX, float worldY, float worldZ) {
+    if (!m_particles) {
+        return;
+    }
 
+    // Convert world coordinates to particle system coordinates
+    glm::vec3 burstPosition(worldX, worldY, worldZ + 0.05f); // Slightly above surface
+
+    // Trigger burst at this location
+    m_particles->triggerBurst(burstPosition);
+}
 
 void Realtime::makeShapes() {
     m_sphere_data = Sphere(settings.shapeParameter1,settings.shapeParameter2).getVertexData();
@@ -170,6 +181,12 @@ void Realtime::finish() {
             glDeleteVertexArrays(1, &obj.vao);
         }
     }
+
+    if (m_particles) {
+        delete m_particles;
+        m_particles = nullptr;
+    }
+
     m_terrainObjects.clear();
     m_bumpMapping.cleanup();
     this->doneCurrent();
@@ -234,6 +251,37 @@ void Realtime::initializeGL() {
         ":/resources/shaders/shadows.frag"
         );
 
+    // Initialize preprocessing FBO
+    glGenFramebuffers(1, &m_preprocessFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, m_preprocessFBO);
+
+    // Create color texture
+    glGenTextures(1, &m_preprocessTexture);
+    glBindTexture(GL_TEXTURE_2D, m_preprocessTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
+                 size().width() * m_devicePixelRatio,
+                 size().height() * m_devicePixelRatio,
+                 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                           GL_TEXTURE_2D, m_preprocessTexture, 0);
+
+    // Create depth renderbuffer
+    glGenRenderbuffers(1, &m_preprocessDepthRBO);
+    glBindRenderbuffer(GL_RENDERBUFFER, m_preprocessDepthRBO);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24,
+                          size().width() * m_devicePixelRatio,
+                          size().height() * m_devicePixelRatio);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                              GL_RENDERBUFFER, m_preprocessDepthRBO);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        std::cerr << "ERROR: Preprocessing framebuffer is not complete!" << std::endl;
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
     initializeTerrain();
 
     cacheUniformLocations();
@@ -244,6 +292,9 @@ void Realtime::initializeGL() {
     //RockGenerator
     m_rockGenerator.initialize();
     m_bumpMapping.initialize();
+
+    m_particles = nullptr;
+    m_showParticles = false;
 
         initializeBaseModel();
 }
@@ -500,6 +551,12 @@ void Realtime::placeObjectOnTerrain(float terrainX, float terrainY, PrimitiveTyp
    // std::cout << "Placed " << getObjectTypeName(type) << " at terrain ("
    //           << terrainX << ", " << terrainY << "), height: " << terrainHeight << std::endl;
 
+    if (m_particles) {
+        glm::vec3 worldPos = glm::vec3(m_terrainWorldMatrix * glm::vec4(terrainX, terrainY, terrainHeight, 1.0f));
+        triggerParticleBurst(worldPos.x, worldPos.y, worldPos.z);
+    }
+
+
     update();
 }
 
@@ -569,6 +626,11 @@ GLsizei Realtime::typeInterpretVertices(PrimitiveType type) {
 }
 
 void Realtime::paintGL() {
+    // ========== PREPROCESSING FBO WRAP ==========
+    glBindFramebuffer(GL_FRAMEBUFFER, m_preprocessFBO);
+    glViewport(0, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
     // ========== SHADOW PASS (FIRST) ==========
     glm::vec3 lightPos = glm::vec3(-2.0f, 4.0f, -1.0f);
     glm::mat4 lightProjection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, 1.0f, 7.5f);
@@ -622,7 +684,7 @@ void Realtime::paintGL() {
     }
 
     // ========== MAIN SCENE RENDER ==========
-    glBindFramebuffer(GL_FRAMEBUFFER, defaultFramebufferObject());
+    glBindFramebuffer(GL_FRAMEBUFFER, m_preprocessFBO);
     glViewport(0, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -864,7 +926,43 @@ void Realtime::paintGL() {
         }
     }
 
+    if (m_showParticles && m_particles) {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glDepthMask(GL_FALSE);
+
+        // Convert terrain matrices to glm::mat4
+        glm::mat4 terrainViewMatrix = glm::mat4(1.0f);
+        glm::mat4 terrainProjMatrix = glm::mat4(1.0f);
+
+        for (int i = 0; i < 4; ++i) {
+            for (int j = 0; j < 4; ++j) {
+                terrainViewMatrix[i][j] = m_terrainCamera(j, i);
+                terrainProjMatrix[i][j] = m_terrainProj(j, i);
+            }
+        }
+
+        m_particles->setTerrainMatrices(terrainViewMatrix, terrainProjMatrix, m_terrainWorldMatrix);
+        m_particles->paintGL();
+
+        glDepthMask(GL_TRUE);
+        glDisable(GL_BLEND);
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, m_preprocessFBO);
+
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, defaultFramebufferObject());
+    glBlitFramebuffer(
+        0, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio,
+        0, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio,
+        GL_COLOR_BUFFER_BIT, GL_NEAREST
+        );
+
+    // Restore state
+    glBindFramebuffer(GL_FRAMEBUFFER, defaultFramebufferObject());
     glUseProgram(0);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, 0);
 }
 
 void Realtime::resizeGL(int w, int h) {
@@ -1031,6 +1129,15 @@ void Realtime::keyPressEvent(QKeyEvent *event) {
     // Clear all terrain objects
     if (event->key() == Qt::Key_X) {
         clearTerrainObjects();
+    }
+
+    if (event->key() == Qt::Key_V) {
+        if (!m_particles) {
+            m_particles = new Particles(this);
+            m_particles->initializeGL();
+        }
+        m_showParticles = !m_showParticles;
+        std::cout << "Particles " << (m_showParticles ? "enabled" : "disabled") << std::endl;
     }
 }
 

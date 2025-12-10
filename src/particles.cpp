@@ -203,16 +203,17 @@ void Particles::resizeGL(int w, int h) {
 }
 
 void Particles::paintGL() {
-
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
     if(m_particlesCount == 0) return;
 
     glUseProgram(m_programID);
 
-    glm::mat4 viewProjectionMatrix = m_projectionMatrix * m_viewMatrix;
-    glm::vec3 cameraRight = glm::vec3(m_viewMatrix[0][0], m_viewMatrix[1][0], m_viewMatrix[2][0]);
-    glm::vec3 cameraUp = glm::vec3(m_viewMatrix[0][1], m_viewMatrix[1][1], m_viewMatrix[2][1]);
+    // Use external matrices if available, otherwise use internal
+    glm::mat4 viewMatrix = m_useExternalMatrices ? m_externalViewMatrix : m_viewMatrix;
+    glm::mat4 projectionMatrix = m_useExternalMatrices ? m_externalProjMatrix : m_projectionMatrix;
+
+    glm::mat4 viewProjectionMatrix = projectionMatrix * viewMatrix;
+    glm::vec3 cameraRight = glm::vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
+    glm::vec3 cameraUp = glm::vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
 
     glUniformMatrix4fv(m_viewProjMatrixID, 1, GL_FALSE, glm::value_ptr(viewProjectionMatrix));
     glUniform3fv(m_cameraRightWorldspaceID, 1, glm::value_ptr(cameraRight));
@@ -226,23 +227,19 @@ void Particles::paintGL() {
     glBindBuffer(GL_ARRAY_BUFFER, m_billboardVertexBuffer);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
 
-    // 2nd attribute buffer:  of particles' centers
+    // 2nd attribute buffer: particles' centers
     glEnableVertexAttribArray(1);
     glBindBuffer(GL_ARRAY_BUFFER, m_particlesPositionBuffer);
     glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 0, (void*)0);
 
-    // 3rd attribute buffer : particles' colors
+    // 3rd attribute buffer: particles' colors
     glEnableVertexAttribArray(2);
     glBindBuffer(GL_ARRAY_BUFFER, m_particlesColorBuffer);
     glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, 0, (void*)0);
 
-    // These functions are specific to glDrawArrays*Instanced*.
-    // The first parameter is the attribute buffer we're talking about.
-    // The second parameter is the "rate at which generic vertex attributes advance when rendering multiple instances"
-    // http://www.opengl.org/sdk/docs/man/xhtml/glVertexAttribDivisor.xml
-    glVertexAttribDivisor(0, 0); // particles vertices : always reuse the same 4 vertices -> 0
-    glVertexAttribDivisor(1, 1); // positions : one per quad (its center) -> 1
-    glVertexAttribDivisor(2, 1); // color : one per quad -> 1
+    glVertexAttribDivisor(0, 0);
+    glVertexAttribDivisor(1, 1);
+    glVertexAttribDivisor(2, 1);
 
     // draw the particles
     glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, m_particlesCount);
@@ -268,36 +265,6 @@ void Particles::updateScene() {
         glm::vec3(0.0f, 1.0f, 0.0f)
         );
 
-    // Generate new particles
-    int newparticles = (int)(delta * 10000.0);
-    if(newparticles > (int)(0.016f * 10000.0))
-        newparticles = (int)(0.016f * 10000.0);
-
-    for(int i = 0; i < newparticles; i++) {
-        int particleIndex = findUnusedParticle();
-        ParticleBurst& p = m_particlesContainer[particleIndex];
-
-        p.life = 5.0f;
-        p.pos = glm::vec3(0, 0, 0);
-
-        float spread = 1.5f;
-        glm::vec3 maindir = glm::vec3(0.0f, 10.0f, 0.0f);
-        glm::vec3 randomdir = glm::vec3(
-            (rand() % 2000 - 1000.0f) / 1000.0f,
-            (rand() % 2000 - 1000.0f) / 1000.0f,
-            (rand() % 2000 - 1000.0f) / 1000.0f
-            );
-
-        p.speed = maindir + randomdir * spread;
-
-        // randomize color
-        p.color[0] = rand() % 256;
-        p.color[1] = rand() % 256;
-        p.color[2] = rand() % 256;
-        p.color[3] = (rand() % 256) / 3;
-
-        p.size = (rand() % 1000) / 2000.0f + 0.1f;
-    }
 
     updateParticles(delta);
 
@@ -340,6 +307,10 @@ void Particles::sortParticles() {
 void Particles::updateParticles(double delta) {
     m_particlesCount = 0;
 
+    // Use external camera position if available
+    glm::vec3 cameraPos = m_useExternalMatrices ?
+                              glm::vec3(glm::inverse(m_externalViewMatrix)[3]) : m_cameraPosition;
+
     for(int i = 0; i < MaxParticles; i++) {
         ParticleBurst& p = m_particlesContainer[i];
 
@@ -348,9 +319,9 @@ void Particles::updateParticles(double delta) {
 
             if(p.life > 0.0f) {
                 // Simulate simple physics: gravity only, no collisions
-                p.speed += glm::vec3(0.0f, -9.81f, 0.0f) * (float)delta * 0.5f;
+                p.speed += glm::vec3(0.0f, 0.0f, -9.81f) * (float)delta * 0.5f; // Note: Z-axis for terrain
                 p.pos += p.speed * (float)delta;
-                p.cameradistance = glm::length(p.pos - m_cameraPosition);
+                p.cameradistance = glm::length(p.pos - cameraPos);
 
                 // Fill the GPU buffer
                 m_particlePositionSizeData[4 * m_particlesCount + 0] = p.pos.x;
@@ -363,7 +334,6 @@ void Particles::updateParticles(double delta) {
                 m_particleColorData[4 * m_particlesCount + 2] = p.color[2];
                 m_particleColorData[4 * m_particlesCount + 3] = p.color[3];
             } else {
-                // Particles that just died will be put at the end of the buffer in SortParticles();
                 p.cameradistance = -1.0f;
             }
 
@@ -391,4 +361,45 @@ void Particles::wheelEvent(QWheelEvent *event) {
     m_radius -= event->angleDelta().y() * 0.01f;
     if(m_radius < 2.0f) m_radius = 2.0f;
     if(m_radius > 50.0f) m_radius = 50.0f;
+}
+
+void Particles::setTerrainMatrices(const glm::mat4& view, const glm::mat4& proj, const glm::mat4& world) {
+    m_externalViewMatrix = view;
+    m_externalProjMatrix = proj;
+    m_externalWorldMatrix = world;
+    m_useExternalMatrices = true;
+}
+
+void Particles::triggerBurst(const glm::vec3& position) {
+    // Create burst of particles at specific position
+    int burstCount = 30; // Reduced from 50 - smaller burst
+
+    for(int i = 0; i < burstCount; i++) {
+        int particleIndex = findUnusedParticle();
+        ParticleBurst& p = m_particlesContainer[particleIndex];
+
+        p.life = 0.5f; // Changed from 2.0f - only lasts 1 second
+        p.pos = position;
+
+        // Straight up with slight random variation
+        float angle = (float)(rand() % 360) * 3.14159f / 180.0f;
+        float horizontalSpread = 0.1f + (rand() % 100) / 1000.0f; // Very small horizontal spread
+        float upwardSpeed = 0.5f + (rand() % 100) / 1000.0f; // Mostly upward
+
+        glm::vec3 direction = glm::vec3(
+            horizontalSpread * cos(angle), // Small X movement
+            horizontalSpread * sin(angle), // Small Y movement
+            upwardSpeed                     // Strong Z (upward) movement
+            );
+
+        p.speed = direction;
+
+        // Colorful burst
+        p.color[0] = 215;
+        p.color[1] = 195;
+        p.color[2] = 145;
+        p.color[3] = 200 + rand() % 56;
+
+        p.size = (rand() % 300) / 10000.0f + 0.01f; // Smaller particles (0.01-0.04)
+    }
 }
