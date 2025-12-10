@@ -29,6 +29,7 @@
 #include "rockgenerator.h"
 #include "bumpmapping.h"
 #include "flag.h"
+#include "particles.h"
 
 class Realtime : public QOpenGLWidget
 {
@@ -129,6 +130,7 @@ private:
     void mouseMoveEvent(QMouseEvent *event) override;
     void timerEvent(QTimerEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
+    void triggerParticleBurst(float worldX, float worldY, float worldZ);
 
     // Tick Related Variables
     int m_timer;
@@ -294,5 +296,12 @@ private:
     //Rock
     RockGenerator m_rockGenerator;
     BumpMapping m_bumpMapping;
+
+    Particles* m_particles;
+    bool m_showParticles;
+
+    GLuint m_preprocessFBO;
+    GLuint m_preprocessTexture;
+    GLuint m_preprocessDepthRBO;
 
 };

@@ -9,6 +9,7 @@
 #include "mouse.h"
 #include "terrain.h"
 
+
 // ================== Rendering the Scene!
 
 Realtime::Realtime(QWidget *parent)
@@ -98,6 +99,18 @@ void Realtime::initializeBaseModel() {
     std::cout << "Base model initialized successfully" << std::endl;
 }
 
+void Realtime::triggerParticleBurst(float worldX, float worldY, float worldZ) {
+    if (!m_particles) {
+        return;
+    }
+
+    // Convert world coordinates to particle system coordinates
+    glm::vec3 burstPosition(worldX, worldY, worldZ + 0.05f); // Slightly above surface
+
+    // Trigger burst at this location
+    m_particles->triggerBurst(burstPosition);
+}
+
 void Realtime::makeShapes() {
     m_sphere_data = Sphere(settings.shapeParameter1,settings.shapeParameter2).getVertexData();
     m_cone_data = Cone(settings.shapeParameter1,settings.shapeParameter2).getVertexData();
@@ -168,6 +181,12 @@ void Realtime::finish() {
             glDeleteVertexArrays(1, &obj.vao);
         }
     }
+
+    if (m_particles) {
+        delete m_particles;
+        m_particles = nullptr;
+    }
+
     m_terrainObjects.clear();
     m_bumpMapping.cleanup();
     this->doneCurrent();
@@ -204,6 +223,7 @@ void Realtime::initializeGL() {
 
     glGenTextures(1, &m_depthMap);
     glBindTexture(GL_TEXTURE_2D, m_depthMap);
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_DEPTH_COMPONENT24, SHADOW_WIDTH, SHADOW_HEIGHT);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT,
                  SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
 
@@ -231,6 +251,37 @@ void Realtime::initializeGL() {
         ":/resources/shaders/shadows.frag"
         );
 
+    // Initialize preprocessing FBO
+    glGenFramebuffers(1, &m_preprocessFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, m_preprocessFBO);
+
+    // Create color texture
+    glGenTextures(1, &m_preprocessTexture);
+    glBindTexture(GL_TEXTURE_2D, m_preprocessTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
+                 size().width() * m_devicePixelRatio,
+                 size().height() * m_devicePixelRatio,
+                 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                           GL_TEXTURE_2D, m_preprocessTexture, 0);
+
+    // Create depth renderbuffer
+    glGenRenderbuffers(1, &m_preprocessDepthRBO);
+    glBindRenderbuffer(GL_RENDERBUFFER, m_preprocessDepthRBO);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24,
+                          size().width() * m_devicePixelRatio,
+                          size().height() * m_devicePixelRatio);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                              GL_RENDERBUFFER, m_preprocessDepthRBO);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        std::cerr << "ERROR: Preprocessing framebuffer is not complete!" << std::endl;
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
     initializeTerrain();
 
     cacheUniformLocations();
@@ -241,6 +292,9 @@ void Realtime::initializeGL() {
     //RockGenerator
     m_rockGenerator.initialize();
     m_bumpMapping.initialize();
+
+    m_particles = nullptr;
+    m_showParticles = false;
 
         initializeBaseModel();
 }
@@ -384,6 +438,18 @@ void Realtime::updateAffectedTiles(float x, float y, float radius) {
 // ========== SARYA: TERRAIN OBJECT PLACEMENT SYSTEM - REPLACE THIS CODE AS NEEDED ==========
 
 void Realtime::placeObjectOnTerrain(float terrainX, float terrainY, PrimitiveType type, float size) {
+    std::vector<float> vertexData = getVertexDataForType(type);
+
+    if (vertexData.empty()) {
+        std::cerr << "Error: Empty vertex data for object type " << static_cast<int>(type) << std::endl;
+        return;
+    }
+
+    if (vertexData.size() == 0) {
+        std::cerr << "Error: No vertices for object type " << static_cast<int>(type) << std::endl;
+        return;
+    }
+
     // Clamp to terrain bounds
     terrainX = glm::clamp(terrainX, 0.0f, 1.0f);
     terrainY = glm::clamp(terrainY, 0.0f, 1.0f);
@@ -434,7 +500,7 @@ void Realtime::placeObjectOnTerrain(float terrainX, float terrainY, PrimitiveTyp
         );
 
     // Get appropriate vertex data based on type
-    std::vector<float> vertexData = getVertexDataForType(type);
+  //  std::vector<float> vertexData = getVertexDataForType(type);
 
     if (vertexData.empty()) {
         std::cerr << "Failed to get vertex data for object type" << std::endl;
@@ -461,15 +527,35 @@ void Realtime::placeObjectOnTerrain(float terrainX, float terrainY, PrimitiveTyp
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
+    if (vbo == 0 || vao == 0) {
+        std::cerr << "Error: Failed to create OpenGL buffers" << std::endl;
+        if (vbo != 0) glDeleteBuffers(1, &vbo);
+        if (vao != 0) glDeleteVertexArrays(1, &vao);
+        return;
+    }
+
     obj.vbo = vbo;
     obj.vao = vao;
     obj.vertexCount = vertexData.size() / 6;
+
+    if (obj.vertexCount <= 0) {
+        std::cerr << "Error: Invalid vertex count: " << obj.vertexCount << std::endl;
+        glDeleteBuffers(1, &vbo);
+        glDeleteVertexArrays(1, &vao);
+        return;
+    }
 
     m_terrainObjects.push_back(obj);
 
     // debugging print! shouldn't need it anymore.
    // std::cout << "Placed " << getObjectTypeName(type) << " at terrain ("
    //           << terrainX << ", " << terrainY << "), height: " << terrainHeight << std::endl;
+
+    if (m_particles) {
+        glm::vec3 worldPos = glm::vec3(m_terrainWorldMatrix * glm::vec4(terrainX, terrainY, terrainHeight, 1.0f));
+        triggerParticleBurst(worldPos.x, worldPos.y, worldPos.z);
+    }
+
 
     update();
 }
@@ -540,6 +626,11 @@ GLsizei Realtime::typeInterpretVertices(PrimitiveType type) {
 }
 
 void Realtime::paintGL() {
+    // ========== PREPROCESSING FBO WRAP ==========
+    glBindFramebuffer(GL_FRAMEBUFFER, m_preprocessFBO);
+    glViewport(0, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
     // ========== SHADOW PASS (FIRST) ==========
     glm::vec3 lightPos = glm::vec3(-2.0f, 4.0f, -1.0f);
     glm::mat4 lightProjection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, 1.0f, 7.5f);
@@ -574,6 +665,8 @@ void Realtime::paintGL() {
         if (m_depthUniformLocs.model != -1) {
             glUniformMatrix4fv(m_depthUniformLocs.model, 1, GL_FALSE, &obj.modelMatrix[0][0]);
         }
+
+
         glBindVertexArray(obj.vao);
         glDrawArrays(GL_TRIANGLES, 0, obj.vertexCount);
         glBindVertexArray(0);
@@ -591,7 +684,7 @@ void Realtime::paintGL() {
     }
 
     // ========== MAIN SCENE RENDER ==========
-    glBindFramebuffer(GL_FRAMEBUFFER, defaultFramebufferObject());
+    glBindFramebuffer(GL_FRAMEBUFFER, m_preprocessFBO);
     glViewport(0, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -786,6 +879,7 @@ void Realtime::paintGL() {
     if (m_bumpMapping.isInitialized()) {
         GLuint bumpShader = m_bumpMapping.getShader();
 
+
         if (bumpShader != 0) {
             glUseProgram(bumpShader);
 
@@ -832,7 +926,43 @@ void Realtime::paintGL() {
         }
     }
 
+    if (m_showParticles && m_particles) {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glDepthMask(GL_FALSE);
+
+        // Convert terrain matrices to glm::mat4
+        glm::mat4 terrainViewMatrix = glm::mat4(1.0f);
+        glm::mat4 terrainProjMatrix = glm::mat4(1.0f);
+
+        for (int i = 0; i < 4; ++i) {
+            for (int j = 0; j < 4; ++j) {
+                terrainViewMatrix[i][j] = m_terrainCamera(j, i);
+                terrainProjMatrix[i][j] = m_terrainProj(j, i);
+            }
+        }
+
+        m_particles->setTerrainMatrices(terrainViewMatrix, terrainProjMatrix, m_terrainWorldMatrix);
+        m_particles->paintGL();
+
+        glDepthMask(GL_TRUE);
+        glDisable(GL_BLEND);
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, m_preprocessFBO);
+
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, defaultFramebufferObject());
+    glBlitFramebuffer(
+        0, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio,
+        0, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio,
+        GL_COLOR_BUFFER_BIT, GL_NEAREST
+        );
+
+    // Restore state
+    glBindFramebuffer(GL_FRAMEBUFFER, defaultFramebufferObject());
     glUseProgram(0);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, 0);
 }
 
 void Realtime::resizeGL(int w, int h) {
@@ -999,6 +1129,15 @@ void Realtime::keyPressEvent(QKeyEvent *event) {
     // Clear all terrain objects
     if (event->key() == Qt::Key_X) {
         clearTerrainObjects();
+    }
+
+    if (event->key() == Qt::Key_V) {
+        if (!m_particles) {
+            m_particles = new Particles(this);
+            m_particles->initializeGL();
+        }
+        m_showParticles = !m_showParticles;
+        std::cout << "Particles " << (m_showParticles ? "enabled" : "disabled") << std::endl;
     }
 }
 
@@ -1229,7 +1368,6 @@ void Realtime::timerEvent(QTimerEvent *event) {
 }
 
 void Realtime::saveViewportImage(std::string filePath) {
-    makeCurrent();
 
     int fixedWidth = 1024;
     int fixedHeight = 768;
@@ -1390,8 +1528,10 @@ void Realtime::growTree(TerrainObject& obj) {
 }
 
 void Realtime::placeRockOnTerrain(float terrainX, float terrainY, float size) {
+
     terrainX = glm::clamp(terrainX, 0.0f, 1.0f);
     terrainY = glm::clamp(terrainY, 0.0f, 1.0f);
+
 
     float terrainHeight = m_terrain.getHeight(terrainX, terrainY);
 
@@ -1404,7 +1544,14 @@ void Realtime::placeRockOnTerrain(float terrainX, float terrainY, float size) {
     int vertexCount = m_rockGenerator.getVertexCount();
 
     if (rockVertexData.empty() || vertexCount == 0) {
-        std::cerr << "ERROR: Rock generation failed!" << std::endl;
+        std::cerr << "ERROR: Rock generation failed! Vertex data empty." << std::endl;
+        return;
+    }
+
+    // Calculate actual number of vertices (9 floats per vertex)
+    int actualVertexCount = rockVertexData.size() / 9;
+    if (actualVertexCount <= 0) {
+        std::cerr << "ERROR: Invalid rock vertex count: " << actualVertexCount << std::endl;
         return;
     }
 
@@ -1446,17 +1593,17 @@ void Realtime::placeRockOnTerrain(float terrainX, float terrainY, float size) {
 
     glBindVertexArray(vao);
 
-    // Position (location 0)
+    // Position (location 0) - 3 floats
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 9,
                           reinterpret_cast<void *>(0));
 
-    // Normal (location 1)
+    // Normal (location 1) - 3 floats
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 9,
                           reinterpret_cast<void *>(sizeof(GLfloat) * 3));
 
-    // Tangent (location 2)
+    // Tangent (location 2) - 3 floats
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 9,
                           reinterpret_cast<void *>(sizeof(GLfloat) * 6));
@@ -1464,15 +1611,23 @@ void Realtime::placeRockOnTerrain(float terrainX, float terrainY, float size) {
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
+    if (vbo == 0 || vao == 0) {
+        std::cerr << "Error: Failed to create OpenGL buffers for rock" << std::endl;
+        if (vbo != 0) glDeleteBuffers(1, &vbo);
+        if (vao != 0) glDeleteVertexArrays(1, &vao);
+        return;
+    }
+
     obj.vbo = vbo;
     obj.vao = vao;
-    obj.vertexCount = vertexCount;
+    obj.vertexCount = actualVertexCount;  // Store actual vertex count
 
     m_terrainObjects.push_back(obj);
 
-    std::cout << "Placed rock with detail level " << randomDetail << " at terrain ("
-              << terrainX << ", " << terrainY << ")" << std::endl;
-
+    std::cout << "Placed rock with detail level " << randomDetail
+              << " at terrain (" << terrainX << ", " << terrainY << ")"
+              << " vertices: " << obj.vertexCount
+              << " total floats: " << rockVertexData.size() << std::endl;
     update();
 }
 
