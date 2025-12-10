@@ -160,11 +160,16 @@ void Realtime::finish() {
 
     // Terrain objects cleanup
     for (const TerrainObject& obj : m_terrainObjects) {
-        glDeleteBuffers(1, &obj.vbo);
-        glDeleteVertexArrays(1, &obj.vao);
+        if (obj.isFlag && obj.flagSimulation) {
+            obj.flagSimulation->cleanup();
+            delete obj.flagSimulation;
+        } else {
+            glDeleteBuffers(1, &obj.vbo);
+            glDeleteVertexArrays(1, &obj.vao);
+        }
     }
     m_terrainObjects.clear();
-
+    m_bumpMapping.cleanup();
     this->doneCurrent();
 }
 
@@ -229,7 +234,15 @@ void Realtime::initializeGL() {
     initializeTerrain();
 
     cacheUniformLocations();
-    initializeBaseModel();
+
+    //TreeManager codes
+    m_treeManager.initialize();
+
+    //RockGenerator
+    m_rockGenerator.initialize();
+    m_bumpMapping.initialize();
+
+        initializeBaseModel();
 }
 
 void Realtime::cacheUniformLocations() {
@@ -554,8 +567,10 @@ void Realtime::paintGL() {
         glBindVertexArray(0);
     }
 
-    // Shadow pass for terrain objects
+    // Shadow pass for terrain objects (skip flags and rocks with special shaders)
     for (const TerrainObject& obj : m_terrainObjects) {
+        if (obj.isFlag || obj.isRock) continue;
+
         if (m_depthUniformLocs.model != -1) {
             glUniformMatrix4fv(m_depthUniformLocs.model, 1, GL_FALSE, &obj.modelMatrix[0][0]);
         }
@@ -564,6 +579,7 @@ void Realtime::paintGL() {
         glBindVertexArray(0);
     }
 
+    // Shadow pass for base model
     if (m_baseModel_data.size() > 0) {
         glm::mat4 fullModelMatrix = m_terrainWorldMatrix * m_baseModelMatrix;
         if (m_depthUniformLocs.model != -1) {
@@ -579,11 +595,10 @@ void Realtime::paintGL() {
     glViewport(0, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    // ========== SKYBOX RENDERING (AFTER CLEAR, BEFORE TERRAIN) ==========
-    glDepthMask(GL_FALSE);  // Disable depth writing for skybox
+    // ========== SKYBOX RENDERING ==========
+    glDepthMask(GL_FALSE);
 
     if (m_showTerrain) {
-        // Use terrain camera for skybox when in terrain mode
         glm::mat4 terrainViewMatrix = glm::mat4(1.0f);
         glm::mat4 terrainProjMatrix = glm::mat4(1.0f);
 
@@ -596,11 +611,10 @@ void Realtime::paintGL() {
 
         m_skybox.render(&terrainViewMatrix[0][0], &terrainProjMatrix[0][0]);
     } else {
-        // Use regular scene camera for skybox
         m_skybox.render(&m_view[0][0], &m_proj[0][0]);
     }
 
-    glDepthMask(GL_TRUE);  // Re-enable depth writing
+    glDepthMask(GL_TRUE);
 
     // ========== TERRAIN RENDERING ==========
     if (m_showTerrain) {
@@ -621,14 +635,63 @@ void Realtime::paintGL() {
         m_terrainProgram->release();
     }
 
-    // ========== OBJECTS ON TERRAIN RENDERING ==========
+    // ========== BASE MODEL RENDERING (UNDER TERRAIN) ==========
+    if (m_baseModel_data.size() > 0) {
+        glUseProgram(m_shader);
+
+        // Convert terrain camera matrices
+        glm::mat4 terrainViewMatrix = glm::mat4(1.0f);
+        glm::mat4 terrainProjMatrix = glm::mat4(1.0f);
+
+        for (int i = 0; i < 4; ++i) {
+            for (int j = 0; j < 4; ++j) {
+                terrainViewMatrix[i][j] = m_terrainCamera(j, i);
+                terrainProjMatrix[i][j] = m_terrainProj(j, i);
+            }
+        }
+
+        // Set uniforms
+        if (m_uniformLocs.view != -1) glUniformMatrix4fv(m_uniformLocs.view, 1, GL_FALSE, &terrainViewMatrix[0][0]);
+        if (m_uniformLocs.projection != -1) glUniformMatrix4fv(m_uniformLocs.projection, 1, GL_FALSE, &terrainProjMatrix[0][0]);
+        if (m_uniformLocs.lightSpaceMatrix != -1) glUniformMatrix4fv(m_uniformLocs.lightSpaceMatrix, 1, GL_FALSE, &m_lightSpaceMatrix[0][0]);
+        if (m_uniformLocs.lightPos != -1) glUniform3fv(m_uniformLocs.lightPos, 1, &lightPos[0]);
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, m_depthMap);
+        if (m_uniformLocs.shadowMap != -1) glUniform1i(m_uniformLocs.shadowMap, 0);
+
+        glBindVertexArray(m_baseModel_vao);
+
+        glm::mat4 fullModelMatrix = m_terrainWorldMatrix * m_baseModelMatrix;
+
+        if (m_uniformLocs.model != -1) glUniformMatrix4fv(m_uniformLocs.model, 1, GL_FALSE, &fullModelMatrix[0][0]);
+
+        glm::mat4 mvp = terrainProjMatrix * terrainViewMatrix * fullModelMatrix;
+        if (m_uniformLocs.mvp != -1) glUniformMatrix4fv(m_uniformLocs.mvp, 1, GL_FALSE, &mvp[0][0]);
+
+        glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(fullModelMatrix)));
+        if (m_uniformLocs.ictm != -1) glUniformMatrix3fv(m_uniformLocs.ictm, 1, GL_FALSE, &normalMatrix[0][0]);
+
+        // Set base model color (brown/rocky)
+        glm::vec4 baseColor = glm::vec4(0.4f, 0.3f, 0.2f, 1.0f);
+        if (m_uniformLocs.cAmbient != -1) glUniform4fv(m_uniformLocs.cAmbient, 1, &baseColor[0]);
+        if (m_uniformLocs.cDiffuse != -1) glUniform4fv(m_uniformLocs.cDiffuse, 1, &baseColor[0]);
+        if (m_uniformLocs.cSpecular != -1) glUniform4f(m_uniformLocs.cSpecular, 0.2f, 0.2f, 0.2f, 1.0f);
+        if (m_uniformLocs.shininess != -1) glUniform1f(m_uniformLocs.shininess, 16.0f);
+        if (m_uniformLocs.ka != -1) glUniform1f(m_uniformLocs.ka, renderData.globalData.ka);
+        if (m_uniformLocs.kd != -1) glUniform1f(m_uniformLocs.kd, 0.8f);
+        if (m_uniformLocs.ks != -1) glUniform1f(m_uniformLocs.ks, 0.5f);
+
+        glDrawArrays(GL_TRIANGLES, 0, m_baseModel_data.size() / 6);
+        glBindVertexArray(0);
+    }
+
+    // ========== REGULAR TERRAIN OBJECTS RENDERING ==========
     glUseProgram(m_shader);
 
-    // Convert QMatrix4x4 to glm::mat4 for terrain camera matrices
     glm::mat4 terrainViewMatrix = glm::mat4(1.0f);
     glm::mat4 terrainProjMatrix = glm::mat4(1.0f);
 
-    // Copy the QMatrix4x4 values to glm::mat4
     for (int i = 0; i < 4; ++i) {
         for (int j = 0; j < 4; ++j) {
             terrainViewMatrix[i][j] = m_terrainCamera(j, i);
@@ -636,18 +699,13 @@ void Realtime::paintGL() {
         }
     }
 
-    // Combine with terrain world matrix
     glm::mat4 terrainMVMatrix = terrainViewMatrix * m_terrainWorldMatrix;
 
-    // Set terrain camera matrices for terrain objects
     if (m_uniformLocs.view != -1) glUniformMatrix4fv(m_uniformLocs.view, 1, GL_FALSE, &terrainViewMatrix[0][0]);
     if (m_uniformLocs.projection != -1) glUniformMatrix4fv(m_uniformLocs.projection, 1, GL_FALSE, &terrainProjMatrix[0][0]);
-
-    // Set other uniforms
     if (m_uniformLocs.lightSpaceMatrix != -1) glUniformMatrix4fv(m_uniformLocs.lightSpaceMatrix, 1, GL_FALSE, &m_lightSpaceMatrix[0][0]);
     if (m_uniformLocs.lightPos != -1) glUniform3fv(m_uniformLocs.lightPos, 1, &lightPos[0]);
     if (m_uniformLocs.cameraPos != -1) {
-        // Get camera position from terrain camera
         QVector3D eye = m_terrainCamera * QVector3D(0, 0, 0);
         glm::vec4 camPosVec(eye.x(), eye.y(), eye.z(), 1.0f);
         glUniform4fv(m_uniformLocs.cameraPos, 1, &camPosVec[0]);
@@ -656,15 +714,16 @@ void Realtime::paintGL() {
     if (m_uniformLocs.kd != -1) glUniform1f(m_uniformLocs.kd, 0.8f);
     if (m_uniformLocs.ks != -1) glUniform1f(m_uniformLocs.ks, 0.5f);
 
-    // Bind shadow map
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, m_depthMap);
     if (m_uniformLocs.shadowMap != -1) {
         glUniform1i(m_uniformLocs.shadowMap, 0);
     }
 
-    // Render terrain objects
+    // Render regular terrain objects (not rocks or flags)
     for (const TerrainObject& obj : m_terrainObjects) {
+        if (obj.isRock || obj.isFlag) continue;
+
         glBindVertexArray(obj.vao);
 
         glm::mat4 fullModelMatrix = m_terrainWorldMatrix * obj.modelMatrix;
@@ -687,10 +746,13 @@ void Realtime::paintGL() {
         glBindVertexArray(0);
     }
 
-    if (m_baseModel_data.size() > 0) {
-        glBindVertexArray(m_baseModel_vao);
+    // ========== FLAG RENDERING ==========
+    glDisable(GL_CULL_FACE);  // Flags need to be visible from both sides
 
-        glm::mat4 fullModelMatrix = m_terrainWorldMatrix * m_baseModelMatrix;
+    for (const TerrainObject& obj : m_terrainObjects) {
+        if (!obj.isFlag || !obj.flagSimulation) continue;
+
+        glm::mat4 fullModelMatrix = m_terrainWorldMatrix * obj.modelMatrix;
 
         if (m_uniformLocs.model != -1) glUniformMatrix4fv(m_uniformLocs.model, 1, GL_FALSE, &fullModelMatrix[0][0]);
 
@@ -700,15 +762,74 @@ void Realtime::paintGL() {
         glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(fullModelMatrix)));
         if (m_uniformLocs.ictm != -1) glUniformMatrix3fv(m_uniformLocs.ictm, 1, GL_FALSE, &normalMatrix[0][0]);
 
-        // Set a distinctive color for the base
-        glm::vec4 baseColor = glm::vec4(0.4f, 0.3f, 0.2f, 1.0f); // Brown/rocky color
-        if (m_uniformLocs.cAmbient != -1) glUniform4fv(m_uniformLocs.cAmbient, 1, &baseColor[0]);
-        if (m_uniformLocs.cDiffuse != -1) glUniform4fv(m_uniformLocs.cDiffuse, 1, &baseColor[0]);
-        if (m_uniformLocs.cSpecular != -1) glUniform4f(m_uniformLocs.cSpecular, 0.2f, 0.2f, 0.2f, 1.0f);
-        if (m_uniformLocs.shininess != -1) glUniform1f(m_uniformLocs.shininess, 16.0f);
+        // Render pole with brown color
+        glm::vec4 poleColor = glm::vec4(0.6f, 0.4f, 0.2f, 1.0f);
+        if (m_uniformLocs.cAmbient != -1) glUniform4fv(m_uniformLocs.cAmbient, 1, &poleColor[0]);
+        if (m_uniformLocs.cDiffuse != -1) glUniform4fv(m_uniformLocs.cDiffuse, 1, &poleColor[0]);
+        if (m_uniformLocs.cSpecular != -1) glUniform4f(m_uniformLocs.cSpecular, 0.3f, 0.3f, 0.3f, 1.0f);
+        if (m_uniformLocs.shininess != -1) glUniform1f(m_uniformLocs.shininess, 32.0f);
 
-        glDrawArrays(GL_TRIANGLES, 0, m_baseModel_data.size() / 6);
-        glBindVertexArray(0);
+        obj.flagSimulation->renderPole();
+
+        // Render flag cloth with flag color
+        if (m_uniformLocs.cAmbient != -1) glUniform4fv(m_uniformLocs.cAmbient, 1, &obj.color[0]);
+        if (m_uniformLocs.cDiffuse != -1) glUniform4fv(m_uniformLocs.cDiffuse, 1, &obj.color[0]);
+        if (m_uniformLocs.cSpecular != -1) glUniform4f(m_uniformLocs.cSpecular, 0.5f, 0.5f, 0.5f, 1.0f);
+        if (m_uniformLocs.shininess != -1) glUniform1f(m_uniformLocs.shininess, 32.0f);
+
+        obj.flagSimulation->render();
+    }
+
+    glEnable(GL_CULL_FACE);
+
+    // ========== ROCK RENDERING WITH BUMP MAPPING ==========
+    if (m_bumpMapping.isInitialized()) {
+        GLuint bumpShader = m_bumpMapping.getShader();
+
+        if (bumpShader != 0) {
+            glUseProgram(bumpShader);
+
+            GLint uModelMatrix = glGetUniformLocation(bumpShader, "modelMatrix");
+            GLint uViewMatrix = glGetUniformLocation(bumpShader, "viewMatrix");
+            GLint uProjMatrix = glGetUniformLocation(bumpShader, "projMatrix");
+            GLint uLightDir = glGetUniformLocation(bumpShader, "lightDir");
+            GLint uMatColor = glGetUniformLocation(bumpShader, "matColor");
+            GLint uBumpPattern = glGetUniformLocation(bumpShader, "bumpPattern");
+            GLint uBumpScale = glGetUniformLocation(bumpShader, "bumpScale");
+            GLint uBumpVariation = glGetUniformLocation(bumpShader, "bumpVariation");
+            GLint uBumpSeed = glGetUniformLocation(bumpShader, "bumpSeed");
+            GLint uBumpStrength = glGetUniformLocation(bumpShader, "bumpStrength");
+
+            if (uViewMatrix != -1) glUniformMatrix4fv(uViewMatrix, 1, GL_FALSE, &terrainViewMatrix[0][0]);
+            if (uProjMatrix != -1) glUniformMatrix4fv(uProjMatrix, 1, GL_FALSE, &terrainProjMatrix[0][0]);
+
+            glm::vec3 lightDir = glm::normalize(glm::vec3(0.5f, 1.0f, 0.5f));
+            if (uLightDir != -1) glUniform3fv(uLightDir, 1, &lightDir[0]);
+
+            if (uBumpPattern != -1) glUniform1i(uBumpPattern, 0);
+            if (uBumpScale != -1) glUniform1f(uBumpScale, m_bumpMapping.getBumpScale());
+            if (uBumpVariation != -1) glUniform1f(uBumpVariation, m_bumpMapping.getBumpVariation());
+            if (uBumpSeed != -1) glUniform1f(uBumpSeed, m_bumpMapping.getBumpSeed());
+            if (uBumpStrength != -1) glUniform1f(uBumpStrength, m_bumpMapping.getBumpStrength());
+
+            for (const TerrainObject& obj : m_terrainObjects) {
+                if (!obj.isRock) continue;
+
+                glBindVertexArray(obj.vao);
+
+                glm::mat4 fullModelMatrix = m_terrainWorldMatrix * obj.modelMatrix;
+
+                if (uModelMatrix != -1) glUniformMatrix4fv(uModelMatrix, 1, GL_FALSE, &fullModelMatrix[0][0]);
+
+                if (uMatColor != -1) {
+                    glm::vec3 color3(obj.color.r, obj.color.g, obj.color.b);
+                    glUniform3fv(uMatColor, 1, &color3[0]);
+                }
+
+                glDrawArrays(GL_TRIANGLES, 0, obj.vertexCount);
+                glBindVertexArray(0);
+            }
+        }
     }
 
     glUseProgram(0);
@@ -813,22 +934,66 @@ void Realtime::keyPressEvent(QKeyEvent *event) {
         }
     }
 
-    // Cycle through object types
+    // Switch to Primitive mode
+    if (event->key() == Qt::Key_P) {
+        m_placementMode = PlacementMode::PRIMITIVE;
+        std::cout << "primitive type" << std::endl;
+
+    }
+
+    // Switch to L-SYSTEM mode
+    if (event->key() == Qt::Key_L) {
+        m_placementMode = PlacementMode::LSYSTEM;
+        std::cout << "l-system type" << std::endl;
+    }
+
+    //Switch to rock generation
+    if (event->key() == Qt::Key_R) {
+        m_placementMode = PlacementMode::ROCK;
+        std::cout << "Rock Placement" << std::endl;
+    }
+
+    //Flag generation
+    if (event->key() == Qt::Key_F) {
+        m_placementMode = PlacementMode::FLAG;
+        std::cout << "Flag Placement" << std::endl;
+    }
+
     if (event->key() == Qt::Key_1) {
-        m_currentObjectType = PrimitiveType::PRIMITIVE_CUBE;
-        std::cout << "Selected: Cube" << std::endl;
+        if (m_placementMode == PlacementMode::PRIMITIVE) {
+            m_currentObjectType = PrimitiveType::PRIMITIVE_CUBE;
+            std::cout << "Selected: Cube" << std::endl;
+        } else {
+            m_currentTreePreset = "Dense";
+            std::cout << "Selected: Dense tree" << std::endl;
+        }
     }
     if (event->key() == Qt::Key_2) {
-        m_currentObjectType = PrimitiveType::PRIMITIVE_SPHERE;
-        std::cout << "Selected: Sphere" << std::endl;
+        if (m_placementMode == PlacementMode::PRIMITIVE) {
+            m_currentObjectType = PrimitiveType::PRIMITIVE_SPHERE;
+            std::cout << "Selected: Sphere" << std::endl;
+        } else {
+            m_currentTreePreset = "Simple";
+            std::cout << "Selected: Simple tree" << std::endl;
+        }
     }
     if (event->key() == Qt::Key_3) {
-        m_currentObjectType = PrimitiveType::PRIMITIVE_CONE;
-        std::cout << "Selected: Cone" << std::endl;
+        if (m_placementMode == PlacementMode::PRIMITIVE) {
+            m_currentObjectType = PrimitiveType::PRIMITIVE_CONE;
+            std::cout << "Selected: Cone" << std::endl;
+        } else {
+            m_currentTreePreset = "Bush";
+            std::cout << "Selected: Bush" << std::endl;
+        }
     }
     if (event->key() == Qt::Key_4) {
-        m_currentObjectType = PrimitiveType::PRIMITIVE_CYLINDER;
-        std::cout << "Selected: Cylinder" << std::endl;
+        if (m_placementMode == PlacementMode::PRIMITIVE) {
+            m_currentObjectType = PrimitiveType::PRIMITIVE_CYLINDER;
+            std::cout << "Selected: Cylinder" << std::endl;
+        } else {
+            m_currentTreePreset = "Asymmetric";
+            std::cout << "Selected: Asymmetric tree" << std::endl;
+        }
     }
 
     // Clear all terrain objects
@@ -862,9 +1027,19 @@ void Realtime::mousePressEvent(QMouseEvent *event) {
             glm::mat4 worldInverse = glm::inverse(m_terrainWorldMatrix);
             m_hitPoint = glm::vec3(worldInverse * glm::vec4(hitpoint, 1.0f));
 
-            // Place object mode
             if (m_placeObjectMode) {
-                placeObjectOnTerrain(m_hitPoint.x, m_hitPoint.y, m_currentObjectType, 0.05f);
+                if (m_placementMode == PlacementMode::PRIMITIVE) {
+                    placeObjectOnTerrain(m_hitPoint.x, m_hitPoint.y,
+                                         m_currentObjectType, 0.05f);
+                } else if (m_placementMode == PlacementMode::LSYSTEM) {
+                    placeLSystemOnTerrain(m_hitPoint.x, m_hitPoint.y,
+                                          m_currentTreePreset,
+                                          3, 0.1f);
+                } else if (m_placementMode == PlacementMode::ROCK) {
+                    placeRockOnTerrain(m_hitPoint.x, m_hitPoint.y, 0.03f);
+                }else if (m_placementMode == PlacementMode::FLAG) {
+                    placeFlagOnTerrain(m_hitPoint.x, m_hitPoint.y, 0.05f);
+                }
             }
             // Terrain sculpting mode
             else {
@@ -1020,6 +1195,24 @@ void Realtime::timerEvent(QTimerEvent *event) {
     float deltaTime = elapsedms * 0.001f;
     m_elapsedTimer.restart();
 
+    //Timer growth
+    bool needsUpdate = false;
+    for (TerrainObject& obj : m_terrainObjects) {
+        //flag
+        if (obj.isFlag && obj.flagSimulation) {
+            obj.flagSimulation->update(deltaTime);
+        }
+        //tree
+        if (obj.isLSystem && obj.currentIteration < obj.maxIteration) {
+            obj.timeSincePlacement += deltaTime;
+            if (obj.timeSincePlacement >= obj.growthInterval) {
+                growTree(obj);
+                obj.timeSincePlacement = 0.0f;
+                needsUpdate = true;
+            }
+        }
+    }
+
     float velocity = 5.0f * deltaTime;
     glm::vec3 right = glm::normalize(glm::cross(camLook, camUp));
 
@@ -1085,4 +1278,246 @@ void Realtime::saveViewportImage(std::string filePath) {
     glDeleteTextures(1, &texture);
     glDeleteRenderbuffers(1, &rbo);
     glDeleteFramebuffers(1, &fbo);
+}
+
+void Realtime::placeLSystemOnTerrain(float terrainX, float terrainY,
+                                     const std::string& preset,
+                                     int maxIterations,
+                                     float size) {
+    terrainX = glm::clamp(terrainX, 0.0f, 1.0f);
+    terrainY = glm::clamp(terrainY, 0.0f, 1.0f);
+
+    float terrainHeight = m_terrain.getHeight(terrainX, terrainY);
+
+    // Start with iteration 1
+    int startIteration = 1;
+    m_treeManager.generateTree(preset, startIteration);
+
+    const std::vector<float>& treeVertexData = m_treeManager.getVertexData();
+    int vertexCount = m_treeManager.getVertexCount();
+
+    if (treeVertexData.empty() || vertexCount == 0) {
+        std::cerr << "ERROR: L-system tree generation failed!" << std::endl;
+        return;
+    }
+
+    TerrainObject obj;
+    obj.isLSystem = true;
+    obj.lSystemPreset = preset;
+    obj.type = PrimitiveType::PRIMITIVE_CUBE;
+    obj.terrainPosition = glm::vec2(terrainX, terrainY);
+    obj.size = size;
+
+    // Growth animation settings
+    obj.currentIteration = startIteration;
+    obj.maxIteration = maxIterations;
+    obj.timeSincePlacement = 0.0f;
+    obj.growthInterval = 5.0f;  // 10 SECONDS CHANGE
+
+    glm::mat4 modelMatrix = glm::mat4(1.0f);
+    modelMatrix = glm::translate(modelMatrix, glm::vec3(terrainX, terrainY, terrainHeight));
+    modelMatrix = glm::rotate(modelMatrix, glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+    modelMatrix = glm::scale(modelMatrix, glm::vec3(size));
+    obj.modelMatrix = modelMatrix;
+
+    //COLOR
+    float greenBase = 0.2f + (rand() % 30) / 100.0f;
+    float brownTint = 0.15f + (rand() % 15) / 100.0f;
+    obj.color = glm::vec4(brownTint, greenBase, brownTint * 0.5f, 1.0f);
+
+    // Create OpenGL buffers
+    GLuint vbo, vao;
+    glGenBuffers(1, &vbo);
+    glGenVertexArrays(1, &vao);
+
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, treeVertexData.size() * sizeof(GLfloat),
+                 treeVertexData.data(), GL_DYNAMIC_DRAW);  // Changed to DYNAMIC_DRAW
+
+    glBindVertexArray(vao);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 6,
+                          reinterpret_cast<void *>(0));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 6,
+                          reinterpret_cast<void *>(sizeof(GLfloat)*3));
+
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+    obj.vbo = vbo;
+    obj.vao = vao;
+    obj.vertexCount = vertexCount;
+
+    m_terrainObjects.push_back(obj);
+
+    std::cout << "Placed L-system tree '" << preset << "' at iteration " << startIteration
+              << " (will grow to " << maxIterations << ")" << std::endl;
+
+    update();
+}
+
+void Realtime::growTree(TerrainObject& obj) {
+    if (!obj.isLSystem || obj.currentIteration >= obj.maxIteration) {
+        return;
+    }
+
+    // Increment iteration
+    obj.currentIteration++;
+
+    // Regenerate tree with new iteration count
+    m_treeManager.generateTree(obj.lSystemPreset, obj.currentIteration);
+
+    const std::vector<float>& treeVertexData = m_treeManager.getVertexData();
+    int vertexCount = m_treeManager.getVertexCount();
+
+    if (treeVertexData.empty() || vertexCount == 0) {
+        std::cerr << "ERROR: Failed to grow tree!" << std::endl;
+        return;
+    }
+
+    // Update vertex count
+    obj.vertexCount = vertexCount;
+
+    // Update VBO with new geometry
+    glBindBuffer(GL_ARRAY_BUFFER, obj.vbo);
+    glBufferData(GL_ARRAY_BUFFER, treeVertexData.size() * sizeof(GLfloat),
+                 treeVertexData.data(), GL_DYNAMIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+    std::cout << "Tree '" << obj.lSystemPreset << "' grew to iteration "
+              << obj.currentIteration << std::endl;
+}
+
+void Realtime::placeRockOnTerrain(float terrainX, float terrainY, float size) {
+    terrainX = glm::clamp(terrainX, 0.0f, 1.0f);
+    terrainY = glm::clamp(terrainY, 0.0f, 1.0f);
+
+    float terrainHeight = m_terrain.getHeight(terrainX, terrainY);
+
+    int randomDetail = 1 + (rand() % 3);
+    m_rockGenerator.generateRock(randomDetail);
+    m_rockGenerator.perturbVertices();
+
+    // Use FULL vertex data (9 floats: pos + normal + tangent)
+    const std::vector<float>& rockVertexData = m_rockGenerator.getFullVertexData();
+    int vertexCount = m_rockGenerator.getVertexCount();
+
+    if (rockVertexData.empty() || vertexCount == 0) {
+        std::cerr << "ERROR: Rock generation failed!" << std::endl;
+        return;
+    }
+
+    TerrainObject obj;
+    obj.isLSystem = false;
+    obj.isRock = true;
+    obj.type = PrimitiveType::PRIMITIVE_CUBE;
+    obj.terrainPosition = glm::vec2(terrainX, terrainY);
+    obj.size = size;
+
+    obj.currentIteration = 0;
+    obj.maxIteration = 0;
+    obj.timeSincePlacement = 0.0f;
+    obj.growthInterval = 0.0f;
+
+    glm::mat4 modelMatrix = glm::mat4(1.0f);
+    modelMatrix = glm::translate(modelMatrix, glm::vec3(terrainX, terrainY, terrainHeight));
+
+    float randomRotation = (rand() % 360) * (M_PI / 180.0f);
+    modelMatrix = glm::rotate(modelMatrix, randomRotation, glm::vec3(0.0f, 0.0f, 1.0f));
+
+    float scaleVariation = 0.8f + (rand() % 40) / 100.0f;
+    modelMatrix = glm::scale(modelMatrix, glm::vec3(size * scaleVariation));
+
+    obj.modelMatrix = modelMatrix;
+
+    // Gray rock color
+    float grayValue = 0.5f + (rand() % 30) / 100.0f;
+    obj.color = glm::vec4(grayValue, grayValue, grayValue, 1.0f);
+
+    // Create OpenGL buffers with 9 floats per vertex
+    GLuint vbo, vao;
+    glGenBuffers(1, &vbo);
+    glGenVertexArrays(1, &vao);
+
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, rockVertexData.size() * sizeof(GLfloat),
+                 rockVertexData.data(), GL_STATIC_DRAW);
+
+    glBindVertexArray(vao);
+
+    // Position (location 0)
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 9,
+                          reinterpret_cast<void *>(0));
+
+    // Normal (location 1)
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 9,
+                          reinterpret_cast<void *>(sizeof(GLfloat) * 3));
+
+    // Tangent (location 2)
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 9,
+                          reinterpret_cast<void *>(sizeof(GLfloat) * 6));
+
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+    obj.vbo = vbo;
+    obj.vao = vao;
+    obj.vertexCount = vertexCount;
+
+    m_terrainObjects.push_back(obj);
+
+    std::cout << "Placed rock with detail level " << randomDetail << " at terrain ("
+              << terrainX << ", " << terrainY << ")" << std::endl;
+
+    update();
+}
+
+void Realtime::placeFlagOnTerrain(float terrainX, float terrainY, float size) {
+    terrainX = glm::clamp(terrainX, 0.0f, 1.0f);
+    terrainY = glm::clamp(terrainY, 0.0f, 1.0f);
+
+    float terrainHeight = m_terrain.getHeight(terrainX, terrainY);
+
+    TerrainObject obj;
+    obj.isLSystem = false;
+    obj.isRock = false;
+    obj.isFlag = true;
+    obj.type = PrimitiveType::PRIMITIVE_CUBE;
+    obj.terrainPosition = glm::vec2(terrainX, terrainY);
+    obj.size = size;
+
+    obj.currentIteration = 0;
+    obj.maxIteration = 0;
+    obj.timeSincePlacement = 0.0f;
+    obj.growthInterval = 0.0f;
+
+    // Create flag simulation
+    Flag* flag = new Flag();
+    glm::vec3 anchorPos = glm::vec3(0.0f, 0.0f, 0.0f);
+    flag->initialize(20, 15, 0.01f, anchorPos);  // Smaller spacing: 0.01
+
+    obj.flagSimulation = flag;
+
+    // Transformation matrix - reasonable size
+    glm::mat4 modelMatrix = glm::mat4(1.0f);
+    modelMatrix = glm::translate(modelMatrix, glm::vec3(terrainX, terrainY, terrainHeight + 0.05f));  // Slight raise
+    modelMatrix = glm::scale(modelMatrix, glm::vec3(1.0f));  // Normal size: 1.0
+    obj.modelMatrix = modelMatrix;
+
+    // Red flag
+    obj.color = glm::vec4(0.8f, 0.1f, 0.1f, 1.0f);
+
+    obj.vao = flag->getVAO();
+    obj.vbo = flag->getVBO();
+    obj.vertexCount = (20-1) * (15-1) * 6;
+
+    m_terrainObjects.push_back(obj);
+
+    std::cout << "Placed flag at terrain (" << terrainX << ", " << terrainY << ")" << std::endl;
+
+    update();
 }

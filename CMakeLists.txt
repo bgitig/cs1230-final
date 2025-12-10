@@ -51,10 +51,15 @@ add_executable(${PROJECT_NAME}
     src/mouse.h src/mouse.cpp
     src/skybox.h src/skybox.cpp
     src/sky.qrc
+
     src/objloader.h src/objloader.cpp
     src/terrainmodel.h src/terrainmodel.cpp
-
-
+    src/turtle.h src/turtle.cpp
+    src/treebase.h src/treebase.cpp
+    src/treemanager.h src/treemanager.cpp
+    src/bumpmapping.h src/bumpmapping.cpp
+    src/rockgenerator.h src/rockgenerator.cpp
+    src/flag.h src/flag.cpp
 
 
 )
@@ -89,6 +94,8 @@ qt6_add_resources(${PROJECT_NAME} "Resources"
         resources/shaders/shadows.vert
         resources/shaders/terrain.frag
         resources/shaders/terrain.vert
+        resources/shaders/bump.frag
+        resources/shaders/bump.vert
 )
 
 qt_add_resources(sky.qrc)
