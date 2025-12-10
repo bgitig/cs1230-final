@@ -630,7 +630,7 @@ GLsizei Realtime::typeInterpretVertices(PrimitiveType type) {
 }
 
 void Realtime::paintGL() {
-    // ========== PREPROCESSING FBO WRAP ==========
+    // ========== RENDER TO PREPROCESSING FBO ==========
     glBindFramebuffer(GL_FRAMEBUFFER, m_preprocessFBO);
     glViewport(0, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -670,7 +670,6 @@ void Realtime::paintGL() {
             glUniformMatrix4fv(m_depthUniformLocs.model, 1, GL_FALSE, &obj.modelMatrix[0][0]);
         }
 
-
         glBindVertexArray(obj.vao);
         glDrawArrays(GL_TRIANGLES, 0, obj.vertexCount);
         glBindVertexArray(0);
@@ -687,7 +686,7 @@ void Realtime::paintGL() {
         glBindVertexArray(0);
     }
 
-    // ========== MAIN SCENE RENDER ==========
+    // ========== MAIN SCENE RENDER TO PREPROCESSING FBO ==========
     glBindFramebuffer(GL_FRAMEBUFFER, m_preprocessFBO);
     glViewport(0, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -736,7 +735,6 @@ void Realtime::paintGL() {
     if (m_baseModel_data.size() > 0) {
         glUseProgram(m_shader);
 
-        // Convert terrain camera matrices
         glm::mat4 terrainViewMatrix = glm::mat4(1.0f);
         glm::mat4 terrainProjMatrix = glm::mat4(1.0f);
 
@@ -747,7 +745,6 @@ void Realtime::paintGL() {
             }
         }
 
-        // Set uniforms
         if (m_uniformLocs.view != -1) glUniformMatrix4fv(m_uniformLocs.view, 1, GL_FALSE, &terrainViewMatrix[0][0]);
         if (m_uniformLocs.projection != -1) glUniformMatrix4fv(m_uniformLocs.projection, 1, GL_FALSE, &terrainProjMatrix[0][0]);
         if (m_uniformLocs.lightSpaceMatrix != -1) glUniformMatrix4fv(m_uniformLocs.lightSpaceMatrix, 1, GL_FALSE, &m_lightSpaceMatrix[0][0]);
@@ -769,7 +766,6 @@ void Realtime::paintGL() {
         glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(fullModelMatrix)));
         if (m_uniformLocs.ictm != -1) glUniformMatrix3fv(m_uniformLocs.ictm, 1, GL_FALSE, &normalMatrix[0][0]);
 
-        // Set base model color (brown/rocky)
         glm::vec4 baseColor = glm::vec4(0.4f, 0.3f, 0.2f, 1.0f);
         if (m_uniformLocs.cAmbient != -1) glUniform4fv(m_uniformLocs.cAmbient, 1, &baseColor[0]);
         if (m_uniformLocs.cDiffuse != -1) glUniform4fv(m_uniformLocs.cDiffuse, 1, &baseColor[0]);
@@ -844,7 +840,7 @@ void Realtime::paintGL() {
     }
 
     // ========== FLAG RENDERING ==========
-    glDisable(GL_CULL_FACE);  // Flags need to be visible from both sides
+    glDisable(GL_CULL_FACE);
 
     for (const TerrainObject& obj : m_terrainObjects) {
         if (!obj.isFlag || !obj.flagSimulation) continue;
@@ -859,7 +855,6 @@ void Realtime::paintGL() {
         glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(fullModelMatrix)));
         if (m_uniformLocs.ictm != -1) glUniformMatrix3fv(m_uniformLocs.ictm, 1, GL_FALSE, &normalMatrix[0][0]);
 
-        // Render pole with brown color
         glm::vec4 poleColor = glm::vec4(0.6f, 0.4f, 0.2f, 1.0f);
         if (m_uniformLocs.cAmbient != -1) glUniform4fv(m_uniformLocs.cAmbient, 1, &poleColor[0]);
         if (m_uniformLocs.cDiffuse != -1) glUniform4fv(m_uniformLocs.cDiffuse, 1, &poleColor[0]);
@@ -868,7 +863,6 @@ void Realtime::paintGL() {
 
         obj.flagSimulation->renderPole();
 
-        // Render flag cloth with flag color
         if (m_uniformLocs.cAmbient != -1) glUniform4fv(m_uniformLocs.cAmbient, 1, &obj.color[0]);
         if (m_uniformLocs.cDiffuse != -1) glUniform4fv(m_uniformLocs.cDiffuse, 1, &obj.color[0]);
         if (m_uniformLocs.cSpecular != -1) glUniform4f(m_uniformLocs.cSpecular, 0.5f, 0.5f, 0.5f, 1.0f);
@@ -882,7 +876,6 @@ void Realtime::paintGL() {
     // ========== ROCK RENDERING WITH BUMP MAPPING ==========
     if (m_bumpMapping.isInitialized()) {
         GLuint bumpShader = m_bumpMapping.getShader();
-
 
         if (bumpShader != 0) {
             glUseProgram(bumpShader);
@@ -930,12 +923,12 @@ void Realtime::paintGL() {
         }
     }
 
+    // ========== PARTICLE RENDERING ==========
     if (m_showParticles && m_particles) {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glDepthMask(GL_FALSE);
 
-        // Convert terrain matrices to glm::mat4
         glm::mat4 terrainViewMatrix = glm::mat4(1.0f);
         glm::mat4 terrainProjMatrix = glm::mat4(1.0f);
 
@@ -953,9 +946,8 @@ void Realtime::paintGL() {
         glDisable(GL_BLEND);
     }
 
-    glBindFramebuffer(GL_FRAMEBUFFER, m_preprocessFBO);
-
-    //copy to default
+    // ========== COPY PREPROCESSING FBO TO DEFAULT FRAMEBUFFER ==========
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, m_preprocessFBO);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, defaultFramebufferObject());
     glBlitFramebuffer(
         0, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio,
@@ -963,7 +955,7 @@ void Realtime::paintGL() {
         GL_COLOR_BUFFER_BIT, GL_NEAREST
         );
 
-    // restore
+    // Restore state
     glBindFramebuffer(GL_FRAMEBUFFER, defaultFramebufferObject());
     glUseProgram(0);
     glActiveTexture(GL_TEXTURE0);
@@ -1164,9 +1156,16 @@ void Realtime::mousePressEvent(QMouseEvent *event) {
     if (m_showTerrain && event->buttons().testFlag(Qt::LeftButton)) {
         m_prevMousePosQt = event->pos();
 
+        float fbWidth = size().width() * m_devicePixelRatio;
+        float fbHeight = size().height() * m_devicePixelRatio;
+
+        float mouseX_fb = (event->pos().x() * m_devicePixelRatio);
+        float mouseY_fb = (event->pos().y() * m_devicePixelRatio) - 1;
+
         std::optional<glm::vec3> planeInt = mouse::mouse_click_callback(
-            1, 1, event->pos().x(), event->pos().y(),
-            m_w, m_h, m_terrainProjMatrix, m_terrainViewMatrix, m_terrainVerts,
+            1, 1, mouseX_fb, mouseY_fb,  // Use framebuffer coordinates
+            fbWidth, fbHeight,  // Pass framebuffer dimensions
+            m_terrainProjMatrix, m_terrainViewMatrix, m_terrainVerts,
             m_terrain.getResolution(), m_terrainWorldMatrix);
 
         if (planeInt.has_value()) {
@@ -1185,7 +1184,7 @@ void Realtime::mousePressEvent(QMouseEvent *event) {
                                           3, 0.1f);
                 } else if (m_placementMode == PlacementMode::ROCK) {
                     placeRockOnTerrain(m_hitPoint.x, m_hitPoint.y, 0.03f);
-                }else if (m_placementMode == PlacementMode::FLAG) {
+                } else if (m_placementMode == PlacementMode::FLAG) {
                     placeFlagOnTerrain(m_hitPoint.x, m_hitPoint.y, 0.05f);
                 }
             }
@@ -1249,10 +1248,19 @@ glm::mat3 rotMat(glm::vec3 &u, float angle) {
 void Realtime::mouseMoveEvent(QMouseEvent *event) {
     // Terrain sculpting when dragging
     if (m_mouseDown && m_showTerrain && m_intersected == 1 && !m_placeObjectMode) {
+
+        float fbWidth = size().width() * m_devicePixelRatio;
+        float fbHeight = size().height() * m_devicePixelRatio;
+
+        float mouseX_fb = (event->pos().x() * m_devicePixelRatio);
+        float mouseY_fb = (event->pos().y() * m_devicePixelRatio) - 1;
+
         std::optional<glm::vec3> planeInt = mouse::mouse_click_callback(
-            1, 1, event->pos().x(), event->pos().y(),
-            m_w, m_h, m_terrainProjMatrix, m_terrainViewMatrix, m_terrainVerts,
+            1, 1, mouseX_fb, mouseY_fb,
+            fbWidth, fbHeight,
+            m_terrainProjMatrix, m_terrainViewMatrix, m_terrainVerts,
             m_terrain.getResolution(), m_terrainWorldMatrix);
+
 
         if (planeInt.has_value()) {
             glm::vec3 hitpoint = planeInt.value();
