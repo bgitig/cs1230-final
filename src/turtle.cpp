@@ -11,7 +11,8 @@ turtle::turtle() {
     branch_contraction_ratio = 0.999;
     tapering_ratio = 0.97f;
     len = 0.1f;
-
+    m_currentIteration = 1;
+    m_bracketDepth = 0;
     reset();
 }
 
@@ -26,6 +27,8 @@ void turtle::reset() {
 
     while (!states.empty()) states.pop();
     m_vertexData.clear();
+    m_currentIteration = 1;
+    m_bracketDepth = 0;
 }
 
 void turtle::setThickness(int val) {
@@ -165,20 +168,26 @@ void turtle::drawCylinder(const glm::vec3& start, const glm::vec3& end, float ra
 
         m_vertexData.push_back(p1.x); m_vertexData.push_back(p1.y); m_vertexData.push_back(p1.z);
         m_vertexData.push_back(normal1.x); m_vertexData.push_back(normal1.y); m_vertexData.push_back(normal1.z);
+        m_vertexData.push_back(static_cast<float>(m_currentIteration));
 
         m_vertexData.push_back(p2.x); m_vertexData.push_back(p2.y); m_vertexData.push_back(p2.z);
         m_vertexData.push_back(normal2.x); m_vertexData.push_back(normal2.y); m_vertexData.push_back(normal2.z);
+        m_vertexData.push_back(static_cast<float>(m_currentIteration));
 
         m_vertexData.push_back(p3.x); m_vertexData.push_back(p3.y); m_vertexData.push_back(p3.z);
         m_vertexData.push_back(normal1.x); m_vertexData.push_back(normal1.y); m_vertexData.push_back(normal1.z);
+        m_vertexData.push_back(static_cast<float>(m_currentIteration));
 
         m_vertexData.push_back(p2.x); m_vertexData.push_back(p2.y); m_vertexData.push_back(p2.z);
         m_vertexData.push_back(normal2.x); m_vertexData.push_back(normal2.y); m_vertexData.push_back(normal2.z);
+        m_vertexData.push_back(static_cast<float>(m_currentIteration));
 
         m_vertexData.push_back(p4.x); m_vertexData.push_back(p4.y); m_vertexData.push_back(p4.z);
         m_vertexData.push_back(normal2.x); m_vertexData.push_back(normal2.y); m_vertexData.push_back(normal2.z);
+        m_vertexData.push_back(static_cast<float>(m_currentIteration));
 
         m_vertexData.push_back(p3.x); m_vertexData.push_back(p3.y); m_vertexData.push_back(p3.z);
         m_vertexData.push_back(normal1.x); m_vertexData.push_back(normal1.y); m_vertexData.push_back(normal1.z);
+        m_vertexData.push_back(static_cast<float>(m_currentIteration));
     }
 }

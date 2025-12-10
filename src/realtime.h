@@ -288,6 +288,8 @@ private:
         GLint cameraPos;
     } m_treeWindUniforms;
 
+    void renderLSystems(glm::mat4 terrainViewMatrix, glm::mat4 terrainProjMatrix);
+
     //Rock
     RockGenerator m_rockGenerator;
     BumpMapping m_bumpMapping;

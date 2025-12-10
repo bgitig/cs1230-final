@@ -10,25 +10,22 @@ uniform float shininess;
 uniform vec3 lightDir;
 uniform vec3 cameraPos;
 
-out vec4 fragColor;
+out vec4 FragColor;
 
 void main() {
-    vec3 normal = normalize(fragNormal);
-    vec3 lightDirection = normalize(lightDir);
-
-    // Ambient
+    // Phong lighting
     vec3 ambient = cAmbient.rgb;
 
-    // Diffuse
-    float diff = max(dot(normal, lightDirection), 0.0);
+    vec3 norm = normalize(fragNormal);
+    vec3 lightD = normalize(lightDir);
+    float diff = max(dot(norm, lightD), 0.0);
     vec3 diffuse = diff * cDiffuse.rgb;
 
-    // Specular
     vec3 viewDir = normalize(cameraPos - fragPos);
-    vec3 reflectDir = reflect(-lightDirection, normal);
+    vec3 reflectDir = reflect(-lightD, norm);
     float spec = pow(max(dot(viewDir, reflectDir), 0.0), shininess);
     vec3 specular = spec * cSpecular.rgb;
 
     vec3 result = ambient + diffuse + specular;
-    fragColor = vec4(result, 1.0);
+    FragColor = vec4(result, 1.0);
 }

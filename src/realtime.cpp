@@ -762,76 +762,7 @@ void Realtime::paintGL() {
 
         }
     }
-
-    //RENDERING L-SYSTEMS
-
-    GLint currentProgram;
-    glGetIntegerv(GL_CURRENT_PROGRAM, &currentProgram);
-    std::cout << "Current shader before tree render: " << currentProgram << std::endl;
-
-    glUseProgram(m_treeWindShader);
-    glGetIntegerv(GL_CURRENT_PROGRAM, &currentProgram);
-    std::cout << "Current shader after UseProgram: " << currentProgram
-              << " (should be " << m_treeWindShader << ")" << std::endl;
-
-    // Set global uniforms
-    if (m_treeWindUniforms.view != -1) {
-        glUniformMatrix4fv(m_treeWindUniforms.view, 1, GL_FALSE, &terrainViewMatrix[0][0]);
-        std::cout << "Set view matrix" << std::endl;
-    }
-    // Wind parameters - adjust these for different effects!
-    if (m_treeWindUniforms.windTime != -1)
-        glUniform1f(m_treeWindUniforms.windTime, m_treeManager.getWindTime());
-    if (m_treeWindUniforms.windStrength != -1)
-        glUniform1f(m_treeWindUniforms.windStrength, 5.0f);
-    if (m_treeWindUniforms.windDirection != -1)
-        glUniform3f(m_treeWindUniforms.windDirection, 1.0f, 0.5f, 0.0f);
-
-    // Lighting
-    glm::vec3 lightDir = glm::normalize(glm::vec3(0.5f, 1.0f, 0.5f));
-    if (m_treeWindUniforms.lightDir != -1)
-        glUniform3fv(m_treeWindUniforms.lightDir, 1, &lightDir[0]);
-
-    // Camera position for specular
-    QVector3D eye = m_terrainCamera * QVector3D(0, 0, 0);
-    glm::vec3 camPos(eye.x(), eye.y(), eye.z());
-    if (m_treeWindUniforms.cameraPos != -1)
-        glUniform3fv(m_treeWindUniforms.cameraPos, 1, &camPos[0]);
-
-    // Render each tree
-
-    std::cout << "Rendering " << m_terrainObjects.size() << " objects, windTime="
-              << m_treeManager.getWindTime() << std::endl;
-    for (const TerrainObject& obj : m_terrainObjects) {
-        if (!obj.isLSystem) continue;
-
-        std::cout << "Rendering tree at (" << obj.terrainPosition.x << ", "
-                  << obj.terrainPosition.y << ")" << std::endl;
-
-        glm::mat4 fullModelMatrix = m_terrainWorldMatrix * obj.modelMatrix;
-
-        if (m_treeWindUniforms.model != -1)
-            glUniformMatrix4fv(m_treeWindUniforms.model, 1, GL_FALSE, &fullModelMatrix[0][0]);
-
-        glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(fullModelMatrix)));
-        if (m_treeWindUniforms.normalMatrix != -1)
-            glUniformMatrix3fv(m_treeWindUniforms.normalMatrix, 1, GL_FALSE, &normalMatrix[0][0]);
-
-        // Material properties
-        if (m_treeWindUniforms.cAmbient != -1)
-            glUniform4fv(m_treeWindUniforms.cAmbient, 1, &obj.color[0]);
-        if (m_treeWindUniforms.cDiffuse != -1)
-            glUniform4fv(m_treeWindUniforms.cDiffuse, 1, &obj.color[0]);
-        if (m_treeWindUniforms.cSpecular != -1)
-            glUniform4f(m_treeWindUniforms.cSpecular, 0.2f, 0.2f, 0.2f, 1.0f);
-        if (m_treeWindUniforms.shininess != -1)
-            glUniform1f(m_treeWindUniforms.shininess, 16.0f);
-
-        glBindVertexArray(obj.vao);
-        glDrawArrays(GL_TRIANGLES, 0, obj.vertexCount);
-        glBindVertexArray(0);
-    }
-
+    renderLSystems(terrainViewMatrix, terrainProjMatrix);
 
     glUseProgram(0);
 }
@@ -1337,15 +1268,24 @@ void Realtime::placeLSystemOnTerrain(float terrainX, float terrainY,
 
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glBufferData(GL_ARRAY_BUFFER, treeVertexData.size() * sizeof(GLfloat),
-                 treeVertexData.data(), GL_DYNAMIC_DRAW);  // Changed to DYNAMIC_DRAW
+                 treeVertexData.data(), GL_DYNAMIC_DRAW);
 
     glBindVertexArray(vao);
+
+    // Position (location 0)
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 6,
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 7,  // CHANGED to 7
                           reinterpret_cast<void *>(0));
+
+    // Normal (location 1)
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 6,
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 7,  // CHANGED to 7
                           reinterpret_cast<void *>(sizeof(GLfloat)*3));
+
+    // Iteration (location 2) - NEW!
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 7,
+                          reinterpret_cast<void *>(sizeof(GLfloat)*6));
 
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -1551,5 +1491,102 @@ void Realtime::checkProgramLinking(GLuint program, const std::string& name) {
         std::cerr << "ERROR: Program linking failed for " << name << "\n" << infoLog << std::endl;
     } else {
         std::cout << "SUCCESS: " << name << " linked successfully" << std::endl;
+    }
+}
+
+void Realtime::renderLSystems(glm::mat4 terrainViewMatrix, glm::mat4 terrainProjMatrix){
+    //RENDERING L-SYSTEMS
+
+    GLint currentProgram;
+    glGetIntegerv(GL_CURRENT_PROGRAM, &currentProgram);
+    std::cout << "Current shader before tree render: " << currentProgram << std::endl;
+
+    glUseProgram(m_treeWindShader);
+    glGetIntegerv(GL_CURRENT_PROGRAM, &currentProgram);
+    std::cout << "Current shader after UseProgram: " << currentProgram
+              << " (should be " << m_treeWindShader << ")" << std::endl;
+
+    // Set global uniforms
+    if (m_treeWindUniforms.view != -1) {
+        glUniformMatrix4fv(m_treeWindUniforms.view, 1, GL_FALSE, &terrainViewMatrix[0][0]);
+        std::cout << "Set view matrix" << std::endl;
+    }
+    if (m_treeWindUniforms.proj != -1) {
+        glUniformMatrix4fv(m_treeWindUniforms.proj, 1, GL_FALSE, &terrainProjMatrix[0][0]);
+    }
+
+    if (m_treeWindUniforms.proj != -1) {
+        glUniformMatrix4fv(m_treeWindUniforms.proj, 1, GL_FALSE, &terrainProjMatrix[0][0]);
+        std::cout << "✓ Set projection matrix (location: " << m_treeWindUniforms.proj << ")" << std::endl;
+    } else {
+        std::cout << "✗ proj uniform NOT FOUND!" << std::endl;
+    }
+
+    // Wind parameters - MUCH STRONGER for visibility
+    if (m_treeWindUniforms.windTime != -1) {
+        float windTime = m_treeManager.getWindTime();
+        glUniform1f(m_treeWindUniforms.windTime, windTime);
+        std::cout << "✓ Set windTime: " << windTime << " (location: " << m_treeWindUniforms.windTime << ")" << std::endl;
+    } else {
+        std::cout << "✗ windTime uniform NOT FOUND!" << std::endl;
+    }
+
+    if (m_treeWindUniforms.windStrength != -1) {
+        glUniform1f(m_treeWindUniforms.windStrength, 1.0f);
+        std::cout << "✓ Set windStrength: 5.0 (location: " << m_treeWindUniforms.windStrength << ")" << std::endl;
+    } else {
+        std::cout << "✗ windStrength uniform NOT FOUND!" << std::endl;
+    }
+
+    if (m_treeWindUniforms.windDirection != -1) {
+        glUniform3f(m_treeWindUniforms.windDirection, 1.0f, 0.5f, 0.0f);
+        std::cout << "✓ Set windDirection" << std::endl;
+    } else {
+        std::cout << "✗ windDirection uniform NOT FOUND!" << std::endl;
+    }
+
+    // Lighting
+    glm::vec3 lightDir = glm::normalize(glm::vec3(0.5f, 1.0f, 0.5f));
+    if (m_treeWindUniforms.lightDir != -1)
+        glUniform3fv(m_treeWindUniforms.lightDir, 1, &lightDir[0]);
+
+    // Camera position for specular
+    QVector3D eye = m_terrainCamera * QVector3D(0, 0, 0);
+    glm::vec3 camPos(eye.x(), eye.y(), eye.z());
+    if (m_treeWindUniforms.cameraPos != -1)
+        glUniform3fv(m_treeWindUniforms.cameraPos, 1, &camPos[0]);
+
+    // Render each tree
+
+    std::cout << "Rendering " << m_terrainObjects.size() << " objects, windTime="
+              << m_treeManager.getWindTime() << std::endl;
+    for (const TerrainObject& obj : m_terrainObjects) {
+        if (!obj.isLSystem) continue;
+
+        std::cout << "Rendering tree at (" << obj.terrainPosition.x << ", "
+                  << obj.terrainPosition.y << ")" << std::endl;
+
+        glm::mat4 fullModelMatrix = m_terrainWorldMatrix * obj.modelMatrix;
+
+        if (m_treeWindUniforms.model != -1)
+            glUniformMatrix4fv(m_treeWindUniforms.model, 1, GL_FALSE, &fullModelMatrix[0][0]);
+
+        glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(fullModelMatrix)));
+        if (m_treeWindUniforms.normalMatrix != -1)
+            glUniformMatrix3fv(m_treeWindUniforms.normalMatrix, 1, GL_FALSE, &normalMatrix[0][0]);
+
+        // Material properties
+        if (m_treeWindUniforms.cAmbient != -1)
+            glUniform4fv(m_treeWindUniforms.cAmbient, 1, &obj.color[0]);
+        if (m_treeWindUniforms.cDiffuse != -1)
+            glUniform4fv(m_treeWindUniforms.cDiffuse, 1, &obj.color[0]);
+        if (m_treeWindUniforms.cSpecular != -1)
+            glUniform4f(m_treeWindUniforms.cSpecular, 0.2f, 0.2f, 0.2f, 1.0f);
+        if (m_treeWindUniforms.shininess != -1)
+            glUniform1f(m_treeWindUniforms.shininess, 16.0f);
+
+        glBindVertexArray(obj.vao);
+        glDrawArrays(GL_TRIANGLES, 0, obj.vertexCount);
+        glBindVertexArray(0);
     }
 }
