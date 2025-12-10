@@ -395,8 +395,8 @@ void Particles::triggerBurst(const glm::vec3& position) {
         p.speed = direction;
 
         // Colorful burst
-        p.color[0] = 215;
-        p.color[1] = 195;
+        p.color[0] = 190;
+        p.color[1] = 175;
         p.color[2] = 145;
         p.color[3] = 200 + rand() % 56;
 

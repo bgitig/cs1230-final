@@ -187,7 +187,6 @@ void main() {
                 color = m_cDiffuse.rgb * diff * lights[0].color.rgb;
             }
         } else {
-            // No lights - show blue
             color = vec3(0.0, 0.0, 0.0);
         }
 

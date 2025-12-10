@@ -496,12 +496,11 @@ void Realtime::placeObjectOnTerrain(float terrainX, float terrainY, PrimitiveTyp
     obj.modelMatrix = modelMatrix;
 
     // Random color for variety
-    obj.color = glm::vec4(
-        0.3f + (rand() % 70) / 100.0f,
-        0.3f + (rand() % 70) / 100.0f,
-        0.3f + (rand() % 70) / 100.0f,
-        1.0f
-        );
+    // Replace your current random color generation with:
+    float r = 0.7f + (rand() % 30) / 100.0f;
+    float g = 0.7f + (rand() % 30) / 100.0f;
+    float b = 0.7f + (rand() % 30) / 100.0f;
+    obj.color = glm::vec4(r, g, b, 1.0f);
 
     // Get appropriate vertex data based on type
   //  std::vector<float> vertexData = getVertexDataForType(type);
@@ -733,6 +732,7 @@ void Realtime::paintGL() {
 
     // ========== BASE MODEL RENDERING (UNDER TERRAIN) ==========
     if (m_baseModel_data.size() > 0) {
+        glDisable(GL_CULL_FACE);
         glUseProgram(m_shader);
 
         glm::mat4 terrainViewMatrix = glm::mat4(1.0f);
@@ -1271,11 +1271,11 @@ void Realtime::mouseMoveEvent(QMouseEvent *event) {
             float dy = newHitPoint.y - m_hitPoint.y;
             float distSq = dx * dx + dy * dy;
 
-            if (distSq > 0.00025f) {
+            if (distSq > 0.00005f) {
                 m_hitPoint = newHitPoint;
 
                 float craterDepth = 0.005f;
-                float craterRadius = 0.01f;
+                float craterRadius = 0.02f;
 
                 std::vector<std::pair<float, float>> offsets = {
                     {0.075f, 0.0f},
@@ -1509,6 +1509,11 @@ void Realtime::placeLSystemOnTerrain(float terrainX, float terrainY,
     std::cout << "Placed L-system tree '" << preset << "' at iteration " << startIteration
               << " (will grow to " << maxIterations << ")" << std::endl;
 
+    if (m_particles) {
+        glm::vec3 worldPos = glm::vec3(m_terrainWorldMatrix * glm::vec4(terrainX, terrainY, terrainHeight, 1.0f));
+        triggerParticleBurst(worldPos.x, worldPos.y, worldPos.z);
+    }
+
     update();
 }
 
@@ -1645,6 +1650,12 @@ void Realtime::placeRockOnTerrain(float terrainX, float terrainY, float size) {
               << " at terrain (" << terrainX << ", " << terrainY << ")"
               << " vertices: " << obj.vertexCount
               << " total floats: " << rockVertexData.size() << std::endl;
+
+    if (m_particles) {
+        glm::vec3 worldPos = glm::vec3(m_terrainWorldMatrix * glm::vec4(terrainX, terrainY, terrainHeight, 1.0f));
+        triggerParticleBurst(worldPos.x, worldPos.y, worldPos.z);
+    }
+
     update();
 }
 
@@ -1690,6 +1701,11 @@ void Realtime::placeFlagOnTerrain(float terrainX, float terrainY, float size) {
     m_terrainObjects.push_back(obj);
 
     std::cout << "Placed flag at terrain (" << terrainX << ", " << terrainY << ")" << std::endl;
+
+    if (m_particles) {
+        glm::vec3 worldPos = glm::vec3(m_terrainWorldMatrix * glm::vec4(terrainX, terrainY, terrainHeight, 1.0f));
+        triggerParticleBurst(worldPos.x, worldPos.y, worldPos.z);
+    }
 
     update();
 }
