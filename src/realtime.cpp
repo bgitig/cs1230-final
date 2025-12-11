@@ -1444,6 +1444,7 @@ void Realtime::placeFlagOnTerrain(float terrainX, float terrainY, float size) {
     Flag* flag = new Flag();
     glm::vec3 anchorPos = glm::vec3(0.0f, 0.0f, 0.0f);
     flag->initialize(20, 15, 0.01f, anchorPos);  // Smaller spacing: 0.01
+    flag->setTerrain(&m_terrain, m_terrainWorldMatrix);
 
     obj.flagSimulation = flag;
 

@@ -1,4 +1,5 @@
 #include "flag.h"
+#include "terrain.h"
 #include <iostream>
 #include <cmath>
 
@@ -8,6 +9,7 @@ Flag::Flag()
     m_gravity(0.0f, 0.0f, -9.8f),
     m_springStiffness(50.0f),
     m_springDamping(0.25f),
+    m_terrain(nullptr), m_hasTerrainCollision(false),
     m_maxStretch(1.1f),
     m_vao(0), m_vbo(0),
     m_poleVao(0), m_poleVbo(0),
@@ -53,7 +55,7 @@ void Flag::createMesh(int width, int height, float spacing, const glm::vec3& anc
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
             Particle p;
-            p.position = anchorPos + glm::vec3(x * spacing, 0.0f, -y * spacing);
+            p.position = anchorPos + glm::vec3(x * spacing, 0.0f, (2*height - 1 - y) * spacing);
             p.oldPosition = p.position;
             p.acceleration = glm::vec3(0.0f);
             p.normal = glm::vec3(0.0f, 1.0f, 0.0f);
@@ -162,6 +164,9 @@ void Flag::update(float deltaTime) {
     // Satisfy constraints multiple times
     for (int i = 0; i < numIterations; i++) {
         satisfyConstraints();
+        if (m_hasTerrainCollision) {
+            handleTerrainCollision();
+        }
     }
 
     // Update normals and vertex buffer
@@ -442,4 +447,53 @@ void Flag::renderPole() {
     glBindVertexArray(m_poleVao);
     glDrawArrays(GL_TRIANGLES, 0, m_poleVertexCount);
     glBindVertexArray(0);
+}
+
+
+//COLLISION
+
+void Flag::setTerrain(Terrain* terrain, const glm::mat4& worldMatrix) {
+    m_terrain = terrain;
+    m_worldMatrix = worldMatrix;
+    m_hasTerrainCollision = true;
+}
+
+void Flag::handleTerrainCollision() {
+    if (!m_terrain || !m_hasTerrainCollision) return;
+
+    for (Particle& p : m_particles) {
+        if (p.fixed) continue;
+
+        // Transform particle to terrain space (inverse of world matrix)
+        glm::mat4 invWorld = glm::inverse(m_worldMatrix);
+        glm::vec4 terrainSpacePos = invWorld * glm::vec4(p.position, 1.0f);
+
+        // Get terrain coordinates (0-1 range)
+        float terrainX = terrainSpacePos.x;
+        float terrainY = terrainSpacePos.y;
+
+        // Check if within terrain bounds
+        if (terrainX < 0.0f || terrainX > 1.0f || terrainY < 0.0f || terrainY > 1.0f) {
+            continue;  // Outside terrain bounds
+        }
+
+        // Get terrain height at this position
+        float terrainHeight = m_terrain->getHeight(terrainX, terrainY);
+
+        // Transform terrain height to world space
+        glm::vec4 terrainWorldPoint = m_worldMatrix * glm::vec4(terrainX, terrainY, terrainHeight, 1.0f);
+        float terrainWorldZ = terrainWorldPoint.z;
+
+        // Collision detection: if particle is below terrain
+        float offset = 0.01f;  // Small offset to prevent sinking
+        if (p.position.z < terrainWorldZ + offset) {
+            // Push particle above terrain
+            p.position.z = terrainWorldZ + offset;
+
+            // Dampen velocity (simulate friction)
+            glm::vec3 velocity = p.position - p.oldPosition;
+            velocity *= 0.3f;  // Reduce velocity by 70%
+            p.oldPosition = p.position - velocity;
+        }
+    }
 }

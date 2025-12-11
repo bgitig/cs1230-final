@@ -4,6 +4,9 @@
 #include <glm/glm.hpp>
 #include <GL/glew.h>
 
+//for collision
+class Terrain;
+
 struct Particle {
     glm::vec3 position;
     glm::vec3 oldPosition;
@@ -46,6 +49,9 @@ public:
     GLuint getPoleVBO() const { return m_poleVbo; }
     int getPoleVertexCount() const { return m_poleVertexCount; }
 
+    //for collision
+    void setTerrain(Terrain* terrain, const glm::mat4& worldMatrix);
+
 private:
     void createMesh(int width, int height, float spacing, const glm::vec3& anchorPos);
     void addSpring(int p1, int p2, float stiffness);
@@ -81,4 +87,10 @@ private:
     GLuint m_poleVao;
     GLuint m_poleVbo;
     int m_poleVertexCount;
+
+    //For collision stuff
+    void handleTerrainCollision();
+    Terrain* m_terrain;
+    glm::mat4 m_worldMatrix;
+    bool m_hasTerrainCollision;
 };
