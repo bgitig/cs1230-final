@@ -53,7 +53,7 @@ add_executable(${PROJECT_NAME}
     src/sky.qrc
 
     src/objloader.h src/objloader.cpp
-    src/terrainmodel.h src/terrainmodel.cpp
+
     src/turtle.h src/turtle.cpp
     src/treebase.h src/treebase.cpp
     src/treemanager.h src/treemanager.cpp
