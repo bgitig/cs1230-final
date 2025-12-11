@@ -92,10 +92,12 @@ void TreeBase::drawPattern(std::string sentence, float turnAngle) {
             m_turtle.turnAround();
         } else if (current == '[') {
             m_turtle.saveState();
+            m_turtle.incrementBracketDepth();
             m_turtle.setThickness(0);
             trunk = false;
         } else if (current == ']') {
             m_turtle.restoreState();
+            m_turtle.decrementBracketDepth();
             m_turtle.setThickness(0);
         } else if (current == 'X' && i + 1 < sentence.length() && sentence[i + 1] != '[') {
             trunk = false;
@@ -135,6 +137,9 @@ void TreeBase::generateTree(const std::string& preset, int iterations) {
     TreePreset& p = it->second;
 
     std::string current = p.axiom;
+    m_turtle.reset();
+    m_turtle.setCurrentIteration(1);  // ADD THIS - Start at iteration 1
+
     for (int i = 0; i < iterations; i++) {
         std::string next = "";
         for (char c : current) {
@@ -146,6 +151,9 @@ void TreeBase::generateTree(const std::string& preset, int iterations) {
             }
         }
         current = next;
+
+        // Increment iteration AFTER each expansion
+        m_turtle.setCurrentIteration(i + 2);  // ADD THIS (i+2 because i starts at 0)
     }
 
     m_generatedString = current;

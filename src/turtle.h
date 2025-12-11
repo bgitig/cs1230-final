@@ -44,6 +44,10 @@ public:
     // Reset for new drawing
     void reset();
 
+    void setCurrentIteration(int iter) { m_currentIteration = iter; }
+    void incrementBracketDepth() { m_bracketDepth++; updateIteration(); }
+    void decrementBracketDepth() { m_bracketDepth--; updateIteration(); }
+
 private:
     // Current state
     TurtleState3D m_state;
@@ -65,4 +69,10 @@ private:
 
     void calculateRotationMatrix(float angle);
     void drawCylinder(const glm::vec3& start, const glm::vec3& end, float radius);
+
+    int m_currentIteration;
+    int m_bracketDepth;
+    void updateIteration() {
+        m_currentIteration = 1 + m_bracketDepth;
+    }
 };

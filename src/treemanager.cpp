@@ -2,7 +2,7 @@
 #include <iostream>
 
 TreeManager::TreeManager()
-    : m_vao(0), m_vbo(0), m_vertexCount(0), m_hasTree(false), m_glInitialized(false) {
+    :m_windTime(0.0f) , m_vao(0), m_vbo(0), m_vertexCount(0), m_hasTree(false), m_glInitialized(false) {
 }
 
 TreeManager::~TreeManager() {

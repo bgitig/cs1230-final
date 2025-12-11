@@ -99,6 +99,9 @@ public:
                                const std::string& preset,
                                int iterations,
                                float size);
+    void checkProgramLinking(GLuint program, const std::string& name);
+    void checkShaderCompilation(GLuint shader, const std::string& name);
+
     //Rock Manager
     void placeRockOnTerrain(float terrainX, float terrainY, float size = 0.05f);
 
@@ -292,6 +295,24 @@ private:
     TreeManager m_treeManager;
     std::string m_currentTreePreset = "Simple";
     void growTree(TerrainObject& obj);
+    GLuint m_treeWindShader;
+    struct TreeWindUniforms {
+        GLint model;
+        GLint view;
+        GLint proj;
+        GLint normalMatrix;
+        GLint windTime;
+        GLint windStrength;
+        GLint windDirection;
+        GLint cAmbient;
+        GLint cDiffuse;
+        GLint cSpecular;
+        GLint shininess;
+        GLint lightDir;
+        GLint cameraPos;
+    } m_treeWindUniforms;
+
+    void renderLSystems(glm::mat4 terrainViewMatrix, glm::mat4 terrainProjMatrix);
 
     //Rock
     RockGenerator m_rockGenerator;

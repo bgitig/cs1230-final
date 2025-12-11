@@ -292,6 +292,33 @@ void Realtime::initializeGL() {
 
     //TreeManager codes
     m_treeManager.initialize();
+    m_treeWindShader = ShaderLoader::createShaderProgram(
+        ":/resources/shaders/tree_wind.vert",
+        ":/resources/shaders/tree_wind.frag"
+        );
+
+    std::cout << "Tree wind shader ID: " << m_treeWindShader << std::endl;
+    checkProgramLinking(m_treeWindShader, "tree_wind shader");
+
+    // Check if uniforms are valid
+    m_treeWindUniforms.windTime = glGetUniformLocation(m_treeWindShader, "windTime");
+    std::cout << "windTime uniform location: " << m_treeWindUniforms.windTime << std::endl;
+
+    m_treeWindUniforms.model = glGetUniformLocation(m_treeWindShader, "model");
+    m_treeWindUniforms.view = glGetUniformLocation(m_treeWindShader, "view");
+    m_treeWindUniforms.model = glGetUniformLocation(m_treeWindShader, "model");
+    m_treeWindUniforms.view = glGetUniformLocation(m_treeWindShader, "view");
+    m_treeWindUniforms.proj = glGetUniformLocation(m_treeWindShader, "proj");
+    m_treeWindUniforms.normalMatrix = glGetUniformLocation(m_treeWindShader, "normalMatrix");
+    m_treeWindUniforms.windTime = glGetUniformLocation(m_treeWindShader, "windTime");
+    m_treeWindUniforms.windStrength = glGetUniformLocation(m_treeWindShader, "windStrength");
+    m_treeWindUniforms.windDirection = glGetUniformLocation(m_treeWindShader, "windDirection");
+    m_treeWindUniforms.cAmbient = glGetUniformLocation(m_treeWindShader, "cAmbient");
+    m_treeWindUniforms.cDiffuse = glGetUniformLocation(m_treeWindShader, "cDiffuse");
+    m_treeWindUniforms.cSpecular = glGetUniformLocation(m_treeWindShader, "cSpecular");
+    m_treeWindUniforms.shininess = glGetUniformLocation(m_treeWindShader, "shininess");
+    m_treeWindUniforms.lightDir = glGetUniformLocation(m_treeWindShader, "lightDir");
+    m_treeWindUniforms.cameraPos = glGetUniformLocation(m_treeWindShader, "cameraPos");
 
     //RockGenerator
     m_rockGenerator.initialize();
@@ -815,7 +842,9 @@ void Realtime::paintGL() {
 
     // Render regular terrain objects (not rocks or flags)
     for (const TerrainObject& obj : m_terrainObjects) {
-        if (obj.isRock || obj.isFlag) continue;
+        if (obj.isRock) continue; //Skipping if rock
+        if (obj.isFlag) continue; //Skipping if flag
+        if (obj.isLSystem) continue; //Skipping trees
 
         glBindVertexArray(obj.vao);
 
@@ -922,6 +951,7 @@ void Realtime::paintGL() {
             }
         }
     }
+    renderLSystems(terrainViewMatrix, terrainProjMatrix);
 
     // ========== PARTICLE RENDERING ==========
     if (m_showParticles && m_particles) {
@@ -1351,6 +1381,10 @@ void Realtime::timerEvent(QTimerEvent *event) {
     float deltaTime = elapsedms * 0.001f;
     m_elapsedTimer.restart();
 
+    //tree animation
+    m_treeManager.updateWind(0.016f);
+    std::cout << "Wind time: " << m_treeManager.getWindTime() << std::endl;
+
     //Timer growth
     bool needsUpdate = false;
     for (TerrainObject& obj : m_terrainObjects) {
@@ -1487,15 +1521,24 @@ void Realtime::placeLSystemOnTerrain(float terrainX, float terrainY,
 
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glBufferData(GL_ARRAY_BUFFER, treeVertexData.size() * sizeof(GLfloat),
-                 treeVertexData.data(), GL_DYNAMIC_DRAW);  // Changed to DYNAMIC_DRAW
+                 treeVertexData.data(), GL_DYNAMIC_DRAW);
 
     glBindVertexArray(vao);
+
+    // Position (location 0)
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 6,
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 7,  // CHANGED to 7
                           reinterpret_cast<void *>(0));
+
+    // Normal (location 1)
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 6,
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 7,  // CHANGED to 7
                           reinterpret_cast<void *>(sizeof(GLfloat)*3));
+
+    // Iteration (location 2) - NEW!
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 7,
+                          reinterpret_cast<void *>(sizeof(GLfloat)*6));
 
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -1708,4 +1751,128 @@ void Realtime::placeFlagOnTerrain(float terrainX, float terrainY, float size) {
     }
 
     update();
+}
+
+
+//DELETE AFTERWARDS
+
+void Realtime::checkShaderCompilation(GLuint shader, const std::string& name) {
+    GLint success;
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+    if (!success) {
+        GLchar infoLog[512];
+        glGetShaderInfoLog(shader, 512, NULL, infoLog);
+        std::cerr << "ERROR: Shader compilation failed for " << name << "\n" << infoLog << std::endl;
+    } else {
+        std::cout << "SUCCESS: " << name << " compiled successfully" << std::endl;
+    }
+}
+
+void Realtime::checkProgramLinking(GLuint program, const std::string& name) {
+    GLint success;
+    glGetProgramiv(program, GL_LINK_STATUS, &success);
+    if (!success) {
+        GLchar infoLog[512];
+        glGetProgramInfoLog(program, 512, NULL, infoLog);
+        std::cerr << "ERROR: Program linking failed for " << name << "\n" << infoLog << std::endl;
+    } else {
+        std::cout << "SUCCESS: " << name << " linked successfully" << std::endl;
+    }
+}
+
+void Realtime::renderLSystems(glm::mat4 terrainViewMatrix, glm::mat4 terrainProjMatrix){
+    //RENDERING L-SYSTEMS
+
+    GLint currentProgram;
+    glGetIntegerv(GL_CURRENT_PROGRAM, &currentProgram);
+    std::cout << "Current shader before tree render: " << currentProgram << std::endl;
+
+    glUseProgram(m_treeWindShader);
+    glGetIntegerv(GL_CURRENT_PROGRAM, &currentProgram);
+    std::cout << "Current shader after UseProgram: " << currentProgram
+              << " (should be " << m_treeWindShader << ")" << std::endl;
+
+    // Set global uniforms
+    if (m_treeWindUniforms.view != -1) {
+        glUniformMatrix4fv(m_treeWindUniforms.view, 1, GL_FALSE, &terrainViewMatrix[0][0]);
+        std::cout << "Set view matrix" << std::endl;
+    }
+    if (m_treeWindUniforms.proj != -1) {
+        glUniformMatrix4fv(m_treeWindUniforms.proj, 1, GL_FALSE, &terrainProjMatrix[0][0]);
+    }
+
+    if (m_treeWindUniforms.proj != -1) {
+        glUniformMatrix4fv(m_treeWindUniforms.proj, 1, GL_FALSE, &terrainProjMatrix[0][0]);
+        std::cout << "✓ Set projection matrix (location: " << m_treeWindUniforms.proj << ")" << std::endl;
+    } else {
+        std::cout << "✗ proj uniform NOT FOUND!" << std::endl;
+    }
+
+    // Wind parameters - MUCH STRONGER for visibility
+    if (m_treeWindUniforms.windTime != -1) {
+        float windTime = m_treeManager.getWindTime();
+        glUniform1f(m_treeWindUniforms.windTime, windTime);
+        std::cout << "✓ Set windTime: " << windTime << " (location: " << m_treeWindUniforms.windTime << ")" << std::endl;
+    } else {
+        std::cout << "✗ windTime uniform NOT FOUND!" << std::endl;
+    }
+
+    if (m_treeWindUniforms.windStrength != -1) {
+        glUniform1f(m_treeWindUniforms.windStrength, 1.0f);
+        std::cout << "✓ Set windStrength: 5.0 (location: " << m_treeWindUniforms.windStrength << ")" << std::endl;
+    } else {
+        std::cout << "✗ windStrength uniform NOT FOUND!" << std::endl;
+    }
+
+    if (m_treeWindUniforms.windDirection != -1) {
+        glUniform3f(m_treeWindUniforms.windDirection, 1.0f, 0.5f, 0.0f);
+        std::cout << "✓ Set windDirection" << std::endl;
+    } else {
+        std::cout << "✗ windDirection uniform NOT FOUND!" << std::endl;
+    }
+
+    // Lighting
+    glm::vec3 lightDir = glm::normalize(glm::vec3(0.5f, 1.0f, 0.5f));
+    if (m_treeWindUniforms.lightDir != -1)
+        glUniform3fv(m_treeWindUniforms.lightDir, 1, &lightDir[0]);
+
+    // Camera position for specular
+    QVector3D eye = m_terrainCamera * QVector3D(0, 0, 0);
+    glm::vec3 camPos(eye.x(), eye.y(), eye.z());
+    if (m_treeWindUniforms.cameraPos != -1)
+        glUniform3fv(m_treeWindUniforms.cameraPos, 1, &camPos[0]);
+
+    // Render each tree
+
+    std::cout << "Rendering " << m_terrainObjects.size() << " objects, windTime="
+              << m_treeManager.getWindTime() << std::endl;
+    for (const TerrainObject& obj : m_terrainObjects) {
+        if (!obj.isLSystem) continue;
+
+        std::cout << "Rendering tree at (" << obj.terrainPosition.x << ", "
+                  << obj.terrainPosition.y << ")" << std::endl;
+
+        glm::mat4 fullModelMatrix = m_terrainWorldMatrix * obj.modelMatrix;
+
+        if (m_treeWindUniforms.model != -1)
+            glUniformMatrix4fv(m_treeWindUniforms.model, 1, GL_FALSE, &fullModelMatrix[0][0]);
+
+        glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(fullModelMatrix)));
+        if (m_treeWindUniforms.normalMatrix != -1)
+            glUniformMatrix3fv(m_treeWindUniforms.normalMatrix, 1, GL_FALSE, &normalMatrix[0][0]);
+
+        // Material properties
+        if (m_treeWindUniforms.cAmbient != -1)
+            glUniform4fv(m_treeWindUniforms.cAmbient, 1, &obj.color[0]);
+        if (m_treeWindUniforms.cDiffuse != -1)
+            glUniform4fv(m_treeWindUniforms.cDiffuse, 1, &obj.color[0]);
+        if (m_treeWindUniforms.cSpecular != -1)
+            glUniform4f(m_treeWindUniforms.cSpecular, 0.2f, 0.2f, 0.2f, 1.0f);
+        if (m_treeWindUniforms.shininess != -1)
+            glUniform1f(m_treeWindUniforms.shininess, 16.0f);
+
+        glBindVertexArray(obj.vao);
+        glDrawArrays(GL_TRIANGLES, 0, obj.vertexCount);
+        glBindVertexArray(0);
+    }
 }
