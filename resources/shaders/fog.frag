@@ -16,18 +16,18 @@ vec4  fog_color = vec4(0.2, 0.2, 0.2, 0.4);
 
 void main()
 {   
-    fragColor = texture(scene, uv);
-    // vec3 scene = texture(scene, uv).rgb;
-    // vec3 bloom = texture(bloom, uv).rgb;
-    // vec3 rays = texture(godrays, uv).rgb;
-    // vec3 hdr = scene + bloom + rays;
+    // fragColor = texture(scene, uv);
+    vec3 scene = texture(scene, uv).rgb;
+    vec3 bloom = texture(bloom, uv).rgb;
+    vec3 rays = texture(godrays, uv).rgb;
+    vec3 hdr = scene + bloom + rays;
 
-    // const float gamma = 2.2;
-    // vec3 color = vec3(1.0) - exp(-hdr * 0.5);
-    // vec3 tonemapped = pow(color, vec3(1.0 / gamma));
-    // vec4 result = vec4(tonemapped, 1.0);
+    const float gamma = 2.2;
+    vec3 color = vec3(1.0) - exp(-hdr * 0.5);
+    vec3 tonemapped = pow(color, vec3(1.0 / gamma));
+    vec4 result = vec4(tonemapped, 1.0);
 
-    // fragColor = result;
+    fragColor = result;
     // float dist = texture(depth, uv).r;
     // float z_ndc = dist * 2.0 - 1.0;
     // float view_z = (2.0 * near * far) / (far + near - z_ndc * (far - near));

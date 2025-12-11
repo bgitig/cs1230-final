@@ -1069,7 +1069,7 @@ void Realtime::paintGL() {
     // // GODRAYS PASS
     glBindFramebuffer(GL_FRAMEBUFFER, godraysFBO);
 
-    glViewport(0, 0, size().width()*2.f*m_devicePixelRatio,size().height()*2.f*m_devicePixelRatio);
+    glViewport(0, 0, size().width()*m_devicePixelRatio,size().height()*m_devicePixelRatio);
     glUseProgram(godraysShader);
     glBindVertexArray(m_fullscreen_vao);
 
@@ -1099,7 +1099,7 @@ void Realtime::paintGL() {
     glBindVertexArray(m_fullscreen_vao);
 
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, godraysTex);
+    glBindTexture(GL_TEXTURE_2D, m_preprocessTexture);
     glUniform1i(glGetUniformLocation(fogShader, "scene"), 0);
 
     glActiveTexture(GL_TEXTURE1);
