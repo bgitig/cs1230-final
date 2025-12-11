@@ -1,6 +1,8 @@
 #include "flag.h"
+#include "terrain.h"
 #include <iostream>
 #include <cmath>
+#include <QImage>
 
 Flag::Flag()
     : m_width(0), m_height(0), m_spacing(0.0f),
@@ -8,11 +10,43 @@ Flag::Flag()
     m_gravity(0.0f, 0.0f, -9.8f),
     m_springStiffness(50.0f),
     m_springDamping(0.25f),
+    m_terrain(nullptr), m_hasTerrainCollision(false),
     m_maxStretch(1.1f),
     m_vao(0), m_vbo(0),
     m_poleVao(0), m_poleVbo(0),
     m_poleVertexCount(0),
-    m_initialized(false) {
+    m_initialized(false),
+    m_textureID(0), m_useTexture(false){
+}
+bool Flag::loadTexture(const std::string& filepath) {
+    QImage image(QString::fromStdString(filepath));
+    if (image.isNull()) {
+        std::cerr << "Failed to load flag texture: " << filepath << std::endl;
+        return false;
+    }
+
+    // Convert to OpenGL format
+    image = image.convertToFormat(QImage::Format_RGBA8888);
+    image = image.mirrored();  // Flip vertically for OpenGL
+
+    // Generate texture
+    glGenTextures(1, &m_textureID);
+    glBindTexture(GL_TEXTURE_2D, m_textureID);
+
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
+                 image.width(), image.height(), 0,
+                 GL_RGBA, GL_UNSIGNED_BYTE, image.bits());
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    m_useTexture = true;
+    std::cout << "Loaded flag texture: " << filepath << std::endl;
+    return true;
 }
 
 Flag::~Flag() {
@@ -53,13 +87,16 @@ void Flag::createMesh(int width, int height, float spacing, const glm::vec3& anc
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
             Particle p;
-            p.position = anchorPos + glm::vec3(x * spacing, 0.0f, -y * spacing);
+            // Flag extends HORIZONTALLY: X to the right, Y is depth, Z is height
+            float zPosition = anchorPos.z - (y * spacing);  // Top to bottom
+            p.position = glm::vec3(anchorPos.x + x * spacing, anchorPos.y, zPosition);
+
             p.oldPosition = p.position;
             p.acceleration = glm::vec3(0.0f);
             p.normal = glm::vec3(0.0f, 1.0f, 0.0f);
             p.mass = 1.0f;
 
-            // Fix the left edge (pole attachment)
+            // Fix the left edge (pole attachment at X=0)
             p.fixed = (x == 0);
 
             m_particles.push_back(p);
@@ -117,6 +154,32 @@ void Flag::update(float deltaTime) {
     const int numIterations = 5;
     const float dt = deltaTime;
 
+    static float windTime = 0.0f;
+    windTime += deltaTime;
+
+    for (Particle& p : m_particles) {
+        if (p.fixed) continue;
+
+        // LESS gravity - flag should flutter, not hang heavy
+        glm::vec3 gravity(0.0f, 0.0f, -2.0f);  // REDUCED from -9.8
+        p.acceleration += gravity;
+
+        // Wind in +Y direction (blowing AWAY from viewer)
+        glm::vec3 wind(0.0f, 8.0f, 0.0f);  // Changed from X to Y direction
+        wind.y += sin(windTime * 2.0f) * 4.0f;
+        wind.x += cos(windTime * 1.5f) * 2.0f;  // Some side-to-side
+
+        // Wind strength increases away from pole
+        int x = (&p - &m_particles[0]) % m_width;
+        float windStrength = (float)x / (m_width - 1);
+        p.acceleration += wind * windStrength;
+
+        // Air resistance
+        glm::vec3 velocity = p.position - p.oldPosition;
+        p.acceleration -= velocity * 0.1f;  // Increased damping
+    }
+
+    /*
     // Track accumulated time for wind variation
     static float windTime = 0.0f;
     windTime += deltaTime;
@@ -143,6 +206,7 @@ void Flag::update(float deltaTime) {
         glm::vec3 velocity = p.position - p.oldPosition;
         p.acceleration -= velocity * 0.05f;
     }
+    */
 
     // Verlet integration
     for (Particle& p : m_particles) {
@@ -162,6 +226,9 @@ void Flag::update(float deltaTime) {
     // Satisfy constraints multiple times
     for (int i = 0; i < numIterations; i++) {
         satisfyConstraints();
+        if (m_hasTerrainCollision) {
+            handleTerrainCollision();
+        }
     }
 
     // Update normals and vertex buffer
@@ -241,7 +308,7 @@ void Flag::updateNormals() {
 void Flag::updateVertexBuffer() {
     m_vertexData.clear();
 
-    // Create triangles for rendering
+    // Create triangles with UV coordinates (now 8 floats: pos(3) + normal(3) + uv(2))
     for (int y = 0; y < m_height - 1; y++) {
         for (int x = 0; x < m_width - 1; x++) {
             int i0 = getIndex(x, y);
@@ -249,75 +316,95 @@ void Flag::updateVertexBuffer() {
             int i2 = getIndex(x, y + 1);
             int i3 = getIndex(x + 1, y + 1);
 
-            // Triangle 1
+            // Calculate UV coordinates
+            float u0 = (float)x / (m_width - 1);
+            float u1 = (float)(x + 1) / (m_width - 1);
+            float v0 = (float)y / (m_height - 1);
+            float v1 = (float)(y + 1) / (m_height - 1);
+
+            // Triangle 1: i0, i1, i2
+            // Vertex i0
             m_vertexData.push_back(m_particles[i0].position.x);
             m_vertexData.push_back(m_particles[i0].position.y);
             m_vertexData.push_back(m_particles[i0].position.z);
             m_vertexData.push_back(m_particles[i0].normal.x);
             m_vertexData.push_back(m_particles[i0].normal.y);
             m_vertexData.push_back(m_particles[i0].normal.z);
+            m_vertexData.push_back(u0);  // NEW: U coordinate
+            m_vertexData.push_back(v0);  // NEW: V coordinate
 
+            // Vertex i1
             m_vertexData.push_back(m_particles[i1].position.x);
             m_vertexData.push_back(m_particles[i1].position.y);
             m_vertexData.push_back(m_particles[i1].position.z);
             m_vertexData.push_back(m_particles[i1].normal.x);
             m_vertexData.push_back(m_particles[i1].normal.y);
             m_vertexData.push_back(m_particles[i1].normal.z);
+            m_vertexData.push_back(u1);
+            m_vertexData.push_back(v0);
 
+            // Vertex i2
             m_vertexData.push_back(m_particles[i2].position.x);
             m_vertexData.push_back(m_particles[i2].position.y);
             m_vertexData.push_back(m_particles[i2].position.z);
             m_vertexData.push_back(m_particles[i2].normal.x);
             m_vertexData.push_back(m_particles[i2].normal.y);
             m_vertexData.push_back(m_particles[i2].normal.z);
+            m_vertexData.push_back(u0);
+            m_vertexData.push_back(v1);
 
-            // Triangle 2
+            // Triangle 2: i1, i3, i2
+            // Vertex i1
             m_vertexData.push_back(m_particles[i1].position.x);
             m_vertexData.push_back(m_particles[i1].position.y);
             m_vertexData.push_back(m_particles[i1].position.z);
             m_vertexData.push_back(m_particles[i1].normal.x);
             m_vertexData.push_back(m_particles[i1].normal.y);
             m_vertexData.push_back(m_particles[i1].normal.z);
+            m_vertexData.push_back(u1);
+            m_vertexData.push_back(v0);
 
+            // Vertex i3
             m_vertexData.push_back(m_particles[i3].position.x);
             m_vertexData.push_back(m_particles[i3].position.y);
             m_vertexData.push_back(m_particles[i3].position.z);
             m_vertexData.push_back(m_particles[i3].normal.x);
             m_vertexData.push_back(m_particles[i3].normal.y);
             m_vertexData.push_back(m_particles[i3].normal.z);
+            m_vertexData.push_back(u1);
+            m_vertexData.push_back(v1);
 
+            // Vertex i2
             m_vertexData.push_back(m_particles[i2].position.x);
             m_vertexData.push_back(m_particles[i2].position.y);
             m_vertexData.push_back(m_particles[i2].position.z);
             m_vertexData.push_back(m_particles[i2].normal.x);
             m_vertexData.push_back(m_particles[i2].normal.y);
             m_vertexData.push_back(m_particles[i2].normal.z);
+            m_vertexData.push_back(u0);
+            m_vertexData.push_back(v1);
         }
     }
 
-    // Debug: print first particle position
-    static bool firstTime = true;
-    if (firstTime && !m_particles.empty()) {
-        std::cout << "First particle position: ("
-                  << m_particles[0].position.x << ", "
-                  << m_particles[0].position.y << ", "
-                  << m_particles[0].position.z << ")" << std::endl;
-        std::cout << "Vertex data size: " << m_vertexData.size() << std::endl;
-        firstTime = false;
-    }
-
-    // Upload to GPU
+    // Upload to GPU with new stride (8 floats instead of 6)
     glBindVertexArray(m_vao);
     glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
     glBufferData(GL_ARRAY_BUFFER, m_vertexData.size() * sizeof(float),
                  m_vertexData.data(), GL_DYNAMIC_DRAW);
 
+    // Position (location 0)
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
 
+    // Normal (location 1)
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float),
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float),
                           (void*)(3 * sizeof(float)));
+
+    // UV coordinates (location 2) - NEW
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float),
+                          (void*)(6 * sizeof(float)));
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
@@ -347,23 +434,25 @@ void Flag::cleanup() {
         glDeleteBuffers(1, &m_poleVbo);
         m_poleVbo = 0;
     }
+    if (m_textureID != 0) {
+        glDeleteTextures(1, &m_textureID);
+        m_textureID = 0;
+    }
     m_initialized = false;
 }
 
 void Flag::createPole(float poleHeight, float poleRadius) {
     m_poleVertexData.clear();
 
-    // Create a simple rectangular pole (box) RIGHT AT the left edge
-    float width = poleRadius * 0.5f;  // Make it thinner but visible
-    float depth = poleRadius * 0.5f;
+    // Vertical pole on the left side
+    float radius = poleRadius * 0.3f;
 
-    // Position pole centered at x = -width/2 (so right edge touches x=0)
-    float x0 = -width;
-    float x1 = 0.0f;  // Right edge at the flag's left edge
-    float y0 = -depth/2;
-    float y1 = depth/2;
-    float z0 = 0.1f;  // Slightly above flag top
-    float z1 = -poleHeight - 0.1f;  // Extend below flag
+    float x0 = -radius;
+    float x1 = radius;
+    float y0 = -radius;
+    float y1 = radius;
+    float z0 = 0.0f;  // Bottom (ground level)
+    float z1 = poleHeight;   // Extend below flag
 
     // Helper to add a quad (2 triangles)
     auto addQuad = [&](float ax, float ay, float az,
@@ -443,3 +532,53 @@ void Flag::renderPole() {
     glDrawArrays(GL_TRIANGLES, 0, m_poleVertexCount);
     glBindVertexArray(0);
 }
+
+
+//COLLISION
+
+void Flag::setTerrain(Terrain* terrain, const glm::mat4& worldMatrix) {
+    m_terrain = terrain;
+    m_worldMatrix = worldMatrix;
+    m_hasTerrainCollision = true;
+}
+
+void Flag::handleTerrainCollision() {
+    if (!m_terrain || !m_hasTerrainCollision) return;
+
+    for (Particle& p : m_particles) {
+        if (p.fixed) continue;
+
+        // Transform particle to terrain space (inverse of world matrix)
+        glm::mat4 invWorld = glm::inverse(m_worldMatrix);
+        glm::vec4 terrainSpacePos = invWorld * glm::vec4(p.position, 1.0f);
+
+        // Get terrain coordinates (0-1 range)
+        float terrainX = terrainSpacePos.x;
+        float terrainY = terrainSpacePos.y;
+
+        // Check if within terrain bounds
+        if (terrainX < 0.0f || terrainX > 1.0f || terrainY < 0.0f || terrainY > 1.0f) {
+            continue;  // Outside terrain bounds
+        }
+
+        // Get terrain height at this position
+        float terrainHeight = m_terrain->getHeight(terrainX, terrainY);
+
+        // Transform terrain height to world space
+        glm::vec4 terrainWorldPoint = m_worldMatrix * glm::vec4(terrainX, terrainY, terrainHeight, 1.0f);
+        float terrainWorldZ = terrainWorldPoint.z;
+
+        // Collision detection: if particle is below terrain
+        float offset = 0.01f;  // Small offset to prevent sinking
+        if (p.position.z < terrainWorldZ + offset) {
+            // Push particle above terrain
+            p.position.z = terrainWorldZ + offset;
+
+            // Dampen velocity (simulate friction)
+            glm::vec3 velocity = p.position - p.oldPosition;
+            velocity *= 0.3f;  // Reduce velocity by 70%
+            p.oldPosition = p.position - velocity;
+        }
+    }
+}
+
