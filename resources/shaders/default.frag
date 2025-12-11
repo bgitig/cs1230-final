@@ -172,7 +172,7 @@ void main() {
 
     // Start with the object's own ambient color
     // This ensures the object is visible even with no lights
-    vec3 result = m_cAmbient.rgb * m_cDiffuse.rgb * 0.5; // Base ambient color
+    vec3 result = m_cAmbient.rgb; // Base ambient color
 
     // Calculate shadow for directional lights
     float shadow = 0.0;

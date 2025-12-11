@@ -857,7 +857,8 @@ void Realtime::paintGL() {
         glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(fullModelMatrix)));
         if (m_uniformLocs.ictm != -1) glUniformMatrix3fv(m_uniformLocs.ictm, 1, GL_FALSE, &normalMatrix[0][0]);
 
-        if (m_uniformLocs.cAmbient != -1) glUniform4fv(m_uniformLocs.cAmbient, 1, &obj.color[0]);
+        glm::vec4 amb = glm::vec4(1.6f,1.6f,1.6f,1.0f);
+        if (m_uniformLocs.cAmbient != -1) glUniform4fv(m_uniformLocs.cAmbient, 1, &amb[0]);
         if (m_uniformLocs.cDiffuse != -1) glUniform4fv(m_uniformLocs.cDiffuse, 1, &obj.color[0]);
         if (m_uniformLocs.cSpecular != -1) glUniform4f(m_uniformLocs.cSpecular, 0.5f, 0.5f, 0.5f, 1.0f);
         if (m_uniformLocs.shininess != -1) glUniform1f(m_uniformLocs.shininess, 32.0f);
@@ -1070,6 +1071,17 @@ void Realtime::sceneChanged() {
 
 void Realtime::settingsChanged() {
     if (isSetUp) updateShapes();
+    if (settings.rakeMode || settings.camMode) {
+        m_placeObjectMode = false;
+    }
+    if (settings.rockMode) {
+        m_placeObjectMode = true;
+        m_placementMode = PlacementMode::ROCK;
+    }
+    if (settings.treeMode) {
+        m_placeObjectMode = true;
+        m_placementMode = PlacementMode::LSYSTEM;
+    }
     update();
 }
 
