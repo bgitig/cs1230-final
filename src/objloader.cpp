@@ -33,7 +33,7 @@ bool OBJLoader::loadOBJ(const std::string& path, std::vector<float>& out_vertice
         lineNum++;
         line = in.readLine().trimmed();
         if (line.isEmpty() || line.startsWith("#")) {
-            continue; // Skip empty lines and comments
+            continue; // skip empty lines and comments
         }
 
         std::string stdLine = line.toStdString();
@@ -61,14 +61,14 @@ bool OBJLoader::loadOBJ(const std::string& path, std::vector<float>& out_vertice
             std::vector<std::string> faceTokens;
             std::string token;
 
-            // Collect all face tokens
+            // collect all faces
             while (iss >> token) {
                 faceTokens.push_back(token);
             }
 
-            // Triangulate polygon (works for triangles and quads)
+            // polygone triangulation
             for (size_t i = 1; i + 1 < faceTokens.size(); i++) {
-                // Create triangle from vertices 0, i, i+1
+                // vertices 0, i, i+1
                 for (size_t j = 0; j < 3; j++) {
                     size_t idx = (j == 0) ? 0 : (j == 1 ? i : i + 1);
                     std::string& faceData = faceTokens[idx];
@@ -93,15 +93,12 @@ bool OBJLoader::loadOBJ(const std::string& path, std::vector<float>& out_vertice
 
     file.close();
 
-    // Rest of the code remains the same...
-    // Build output vertex data
     out_vertices.clear();
     for (size_t i = 0; i < vertexIndices.size(); i++) {
         unsigned int vertexIndex = vertexIndices[i] - 1;
 
         if (vertexIndex >= temp_vertices.size()) {
-            std::cerr << "ERROR: Vertex index out of bounds! Index: " << vertexIndex
-                      << ", Max: " << temp_vertices.size() - 1 << std::endl;
+            std::cerr << "ERROR: Vertex index out of bounds." << std::endl;
             return false;
         }
 
@@ -130,7 +127,6 @@ bool OBJLoader::loadOBJ(const std::string& path, std::vector<float>& out_vertice
         }
     }
 
-    std::cout << "Successfully loaded OBJ: " << vertexIndices.size()
-              << " vertices (" << out_vertices.size() / 6 << " complete vertices)" << std::endl;
+    std::cout << "Successfully loaded OBJ" << std::endl;
     return true;
 }

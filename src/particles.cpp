@@ -25,7 +25,7 @@ Particles::Particles(QWidget *parent)
     m_particlePositionSizeData = new GLfloat[MaxParticles * 4];
     m_particleColorData = new GLubyte[MaxParticles * 4];
 
-    // Initialize all particles as dead
+    // initialize all particles as dead
     for(int i = 0; i < MaxParticles; i++) {
         m_particlesContainer[i].life = -1.0f;
         m_particlesContainer[i].cameradistance = -1.0f;
@@ -34,7 +34,7 @@ Particles::Particles(QWidget *parent)
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
 
-    // Start timer for animation
+    // timer for animation
     connect(&m_timer, &QTimer::timeout, this, &Particles::updateScene);
     m_timer.start(16); // ~60 FPS
 }
@@ -78,7 +78,7 @@ void Particles::initializeGL() {
     glBindVertexArray(m_vao);
 
     // The VBO containing the 4 vertices of the particles
-    // Thanks to instancing, they will be shared by all particles.
+    // Shared by all particles.
     static const GLfloat g_vertex_buffer_data[] = {
         -0.5f, -0.5f, 0.0f,
         0.5f, -0.5f, 0.0f,
@@ -90,16 +90,16 @@ void Particles::initializeGL() {
     glBindBuffer(GL_ARRAY_BUFFER, m_billboardVertexBuffer);
     glBufferData(GL_ARRAY_BUFFER, sizeof(g_vertex_buffer_data), g_vertex_buffer_data, GL_STATIC_DRAW);
 
-    // The VBO containing the positions and sizes of the particles
+    // VBO containing the positions and sizes of the particles
     glGenBuffers(1, &m_particlesPositionBuffer);
     glBindBuffer(GL_ARRAY_BUFFER, m_particlesPositionBuffer);
-    // Initialize with empty (NULL) buffer : it will be updated later, each frame.
+    // Initialize with empty buffer : will be updated later by frame.
     glBufferData(GL_ARRAY_BUFFER, MaxParticles * 4 * sizeof(GLfloat), NULL, GL_STREAM_DRAW);
 
-    // The VBO containing the colors of the particles
+    // VBO containing the colors of the particles
     glGenBuffers(1, &m_particlesColorBuffer);
     glBindBuffer(GL_ARRAY_BUFFER, m_particlesColorBuffer);
-    // Initialize with empty (NULL) buffer : it will be updated later, each frame.
+    // Initialize with empty buffer : it will be updated later by frame.
     glBufferData(GL_ARRAY_BUFFER, MaxParticles * 4 * sizeof(GLubyte), NULL, GL_STREAM_DRAW);
 
     glBindVertexArray(0);
@@ -270,7 +270,7 @@ void Particles::updateScene() {
 
     sortParticles();
 
-    // Update the buffers that OpenGL uses for rendering
+    // update the buffers through OpenGL
     glBindBuffer(GL_ARRAY_BUFFER, m_particlesPositionBuffer);
     glBufferData(GL_ARRAY_BUFFER, MaxParticles * 4 * sizeof(GLfloat), NULL, GL_STREAM_DRAW);
     glBufferSubData(GL_ARRAY_BUFFER, 0, m_particlesCount * sizeof(GLfloat) * 4, m_particlePositionSizeData);
@@ -282,6 +282,7 @@ void Particles::updateScene() {
     update();
 }
 
+// artifact of initial implementation, ignore
 int Particles::findUnusedParticle() {
     for(int i = m_lastUsedParticle; i < MaxParticles; i++) {
         if(m_particlesContainer[i].life < 0) {
@@ -297,7 +298,7 @@ int Particles::findUnusedParticle() {
         }
     }
 
-    return 0; // All particles are taken, override the first one
+    return 0;
 }
 
 void Particles::sortParticles() {
@@ -307,7 +308,6 @@ void Particles::sortParticles() {
 void Particles::updateParticles(double delta) {
     m_particlesCount = 0;
 
-    // Use external camera position if available
     glm::vec3 cameraPos = m_useExternalMatrices ?
                               glm::vec3(glm::inverse(m_externalViewMatrix)[3]) : m_cameraPosition;
 
@@ -318,12 +318,12 @@ void Particles::updateParticles(double delta) {
             p.life -= delta;
 
             if(p.life > 0.0f) {
-                // Simulate simple physics: gravity only, no collisions
-                p.speed += glm::vec3(0.0f, 0.0f, -9.81f) * (float)delta * 0.5f; // Note: Z-axis for terrain
+                // simple physics: gravity only, no collisions
+                p.speed += glm::vec3(0.0f, 0.0f, -9.81f) * (float)delta * 0.5f;
                 p.pos += p.speed * (float)delta;
                 p.cameradistance = glm::length(p.pos - cameraPos);
 
-                // Fill the GPU buffer
+                // fill the GPU buffer
                 m_particlePositionSizeData[4 * m_particlesCount + 0] = p.pos.x;
                 m_particlePositionSizeData[4 * m_particlesCount + 1] = p.pos.y;
                 m_particlePositionSizeData[4 * m_particlesCount + 2] = p.pos.z;
@@ -371,35 +371,35 @@ void Particles::setTerrainMatrices(const glm::mat4& view, const glm::mat4& proj,
 }
 
 void Particles::triggerBurst(const glm::vec3& position) {
-    // Create burst of particles at specific position
-    int burstCount = 30; // Reduced from 50 - smaller burst
+    // creates "poof" of particles at given position
+    int burstCount = 30;
 
     for(int i = 0; i < burstCount; i++) {
         int particleIndex = findUnusedParticle();
         ParticleBurst& p = m_particlesContainer[particleIndex];
 
-        p.life = 0.5f; // Changed from 2.0f - only lasts 1 second
+        p.life = 0.5f;
         p.pos = position;
 
-        // Straight up with slight random variation
+        // straight up with slight random variation
         float angle = (float)(rand() % 360) * 3.14159f / 180.0f;
-        float horizontalSpread = 0.1f + (rand() % 100) / 1000.0f; // Very small horizontal spread
-        float upwardSpeed = 0.5f + (rand() % 100) / 1000.0f; // Mostly upward
+        float horizontalSpread = 0.1f + (rand() % 100) / 1000.0f;
+        float upwardSpeed = 0.5f + (rand() % 100) / 1000.0f;
 
         glm::vec3 direction = glm::vec3(
-            horizontalSpread * cos(angle), // Small X movement
-            horizontalSpread * sin(angle), // Small Y movement
-            upwardSpeed                     // Strong Z (upward) movement
+            horizontalSpread * cos(angle),
+            horizontalSpread * sin(angle),
+            upwardSpeed
             );
 
         p.speed = direction;
 
-        // Colorful burst
+        // sand colored
         p.color[0] = 190;
         p.color[1] = 175;
         p.color[2] = 145;
         p.color[3] = 200 + rand() % 56;
 
-        p.size = (rand() % 300) / 10000.0f + 0.01f; // Smaller particles (0.01-0.04)
+        p.size = (rand() % 300) / 10000.0f + 0.01f;
     }
 }

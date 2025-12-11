@@ -60,7 +60,7 @@ void Realtime::setUpBindings(std::vector<float> &shapeData, GLuint &vbo, GLuint 
 }
 
 void Realtime::initializeBaseModel() {
-    // Load your OBJ file (adjust path as needed)
+    // load OBJ file (change path as needed)
     std::string modelPath = ":/images/Base.obj";
 
     if (!OBJLoader::loadOBJ(modelPath, m_baseModel_data)) {
@@ -68,7 +68,7 @@ void Realtime::initializeBaseModel() {
         return;
     }
 
-    // Create VBO and VAO
+    // base VBO and VAO
     glGenBuffers(1, &m_baseModel_vbo);
     glBindBuffer(GL_ARRAY_BUFFER, m_baseModel_vbo);
     glBufferData(GL_ARRAY_BUFFER, m_baseModel_data.size() * sizeof(GLfloat),
@@ -77,12 +77,12 @@ void Realtime::initializeBaseModel() {
     glGenVertexArrays(1, &m_baseModel_vao);
     glBindVertexArray(m_baseModel_vao);
 
-    // Position attribute
+    // pos attribute
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 6,
                           reinterpret_cast<void*>(0));
 
-    // Normal attribute
+    // normal attribute
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 6,
                           reinterpret_cast<void*>(sizeof(GLfloat) * 3));
@@ -90,10 +90,10 @@ void Realtime::initializeBaseModel() {
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-    // Position model under terrain
+    // position the model under terrain
     m_baseModelMatrix = glm::mat4(1.0f);
-    m_baseModelMatrix = glm::translate(m_baseModelMatrix, glm::vec3(0.5f, 0.575f, -0.1f)); // Adjust as needed
-    m_baseModelMatrix = glm::scale(m_baseModelMatrix, glm::vec3(1.0f, 1.0f, 1.0f)); // Adjust scale
+    m_baseModelMatrix = glm::translate(m_baseModelMatrix, glm::vec3(0.5f, 0.575f, -0.1f));
+    m_baseModelMatrix = glm::scale(m_baseModelMatrix, glm::vec3(1.0f, 1.0f, 1.0f));
 
     std::cout << "Base model initialized successfully" << std::endl;
 }
@@ -103,10 +103,10 @@ void Realtime::triggerParticleBurst(float worldX, float worldY, float worldZ) {
         return;
     }
 
-    // Convert world coordinates to particle system coordinates
-    glm::vec3 burstPosition(worldX, worldY, worldZ + 0.05f); // Slightly above surface
+    // converting world coordinates to particle system coordinates
+    glm::vec3 burstPosition(worldX, worldY, worldZ + 0.05f); // just above surface
 
-    // Trigger burst at this location
+    // trigger a "burst" at this location
     m_particles->triggerBurst(burstPosition);
 }
 
@@ -465,7 +465,7 @@ void Realtime::updateAffectedTiles(float x, float y, float radius) {
     m_terrainVbo.release();
 }
 
-// ========== SARYA: TERRAIN OBJECT PLACEMENT SYSTEM - REPLACE THIS CODE AS NEEDED ==========
+// ========== TERRAIN OBJECT PLACEMENT ;) ==========
 
 void Realtime::placeObjectOnTerrain(float terrainX, float terrainY, PrimitiveType type, float size) {
     std::vector<float> vertexData = getVertexDataForType(type);
@@ -480,38 +480,33 @@ void Realtime::placeObjectOnTerrain(float terrainX, float terrainY, PrimitiveTyp
         return;
     }
 
-    // Clamp to terrain bounds
     terrainX = glm::clamp(terrainX, 0.0f, 1.0f);
     terrainY = glm::clamp(terrainY, 0.0f, 1.0f);
 
-    // Get terrain height at this position
     float terrainHeight = m_terrain.getHeight(terrainX, terrainY);
-    // Create object
+
     TerrainObject obj;
     obj.type = type;
     obj.terrainPosition = glm::vec2(terrainX, terrainY);
     obj.size = size;
 
-    // Build transformation matrix
+    // transformation matrix
     glm::mat4 modelMatrix = glm::mat4(1.0f);
     modelMatrix = glm::translate(modelMatrix, glm::vec3(terrainX, terrainY, terrainHeight));
 
-    // Adjust placement based on object type
+    // adjust placement based on object type
     switch(type) {
     case PrimitiveType::PRIMITIVE_CUBE:
-        // Center cube on top of terrain
+        // Center on top of terrain
         modelMatrix = glm::translate(modelMatrix, glm::vec3(0.0f, 0.0f, size * 0.5f));
         break;
     case PrimitiveType::PRIMITIVE_SPHERE:
-        // Center sphere on terrain
         modelMatrix = glm::translate(modelMatrix, glm::vec3(0.0f, 0.0f, size * 0.5f));
         break;
     case PrimitiveType::PRIMITIVE_CONE:
-        // Base of cone sits on terrain
         modelMatrix = glm::translate(modelMatrix, glm::vec3(0.0f, 0.0f, 0.0f));
         break;
     case PrimitiveType::PRIMITIVE_CYLINDER:
-        // Center cylinder on terrain
         modelMatrix = glm::translate(modelMatrix, glm::vec3(0.0f, 0.0f, size * 0.5f));
         break;
     default:
@@ -521,22 +516,17 @@ void Realtime::placeObjectOnTerrain(float terrainX, float terrainY, PrimitiveTyp
     modelMatrix = glm::scale(modelMatrix, glm::vec3(size));
     obj.modelMatrix = modelMatrix;
 
-    // Random color for variety
-    // Replace your current random color generation with:
     float r = 0.7f + (rand() % 30) / 100.0f;
     float g = 0.7f + (rand() % 30) / 100.0f;
     float b = 0.7f + (rand() % 30) / 100.0f;
     obj.color = glm::vec4(r, g, b, 1.0f);
-
-    // Get appropriate vertex data based on type
-    //  std::vector<float> vertexData = getVertexDataForType(type);
 
     if (vertexData.empty()) {
         std::cerr << "Failed to get vertex data for object type" << std::endl;
         return;
     }
 
-    // Create OpenGL buffers
+    // OpenGL buffers
     GLuint vbo, vao;
     glGenBuffers(1, &vbo);
     glGenVertexArrays(1, &vao);
@@ -575,10 +565,6 @@ void Realtime::placeObjectOnTerrain(float terrainX, float terrainY, PrimitiveTyp
     }
 
     m_terrainObjects.push_back(obj);
-
-    // debugging print! shouldn't need it anymore.
-    // std::cout << "Placed " << getObjectTypeName(type) << " at terrain ("
-    //           << terrainX << ", " << terrainY << "), height: " << terrainHeight << std::endl;
 
     if (m_particles) {
         glm::vec3 worldPos = glm::vec3(m_terrainWorldMatrix * glm::vec4(terrainX, terrainY, terrainHeight, 1.0f));
@@ -687,7 +673,7 @@ void Realtime::paintGL() {
         glBindVertexArray(0);
     }
 
-    // Shadow pass for terrain objects (skip flags and rocks with special shaders)
+    // Shadow pass for terrain objects (skip flags and rocks with Sarya's shaders)
     for (const TerrainObject& obj : m_terrainObjects) {
         if (obj.isFlag || obj.isRock) continue;
 
@@ -711,12 +697,12 @@ void Realtime::paintGL() {
         glBindVertexArray(0);
     }
 
-    // ========== MAIN SCENE RENDER TO PREPROCESSING FBO ==========
+    // ========== MAIN SCENE TO PREPROCESSING FBO ==========
     glBindFramebuffer(GL_FRAMEBUFFER, m_preprocessFBO);
     glViewport(0, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    // ========== SKYBOX RENDERING ==========
+    // ========== SKYBOX RENDER ==========
     glDepthMask(GL_FALSE);
 
     if (m_showTerrain) {
@@ -737,7 +723,7 @@ void Realtime::paintGL() {
 
     glDepthMask(GL_TRUE);
 
-    // ========== TERRAIN RENDERING ==========
+    // ========== TERRAIN ==========
     if (m_showTerrain) {
         glEnable(GL_DEPTH_TEST);
 
@@ -756,7 +742,7 @@ void Realtime::paintGL() {
         m_terrainProgram->release();
     }
 
-    // ========== BASE MODEL RENDERING (UNDER TERRAIN) ==========
+    // ========== BASE MODEL ==========
     if (m_baseModel_data.size() > 0) {
         glDisable(GL_CULL_FACE);
         glUseProgram(m_shader);
@@ -805,7 +791,7 @@ void Realtime::paintGL() {
         glBindVertexArray(0);
     }
 
-    // ========== REGULAR TERRAIN OBJECTS RENDERING ==========
+    // ========== REGULAR TERRAIN OBJECTS ==========
     glUseProgram(m_shader);
 
     glm::mat4 terrainViewMatrix = glm::mat4(1.0f);
@@ -953,7 +939,7 @@ void Realtime::paintGL() {
     }
     renderLSystems(terrainViewMatrix, terrainProjMatrix);
 
-    // ========== PARTICLE RENDERING ==========
+    // ========== PARTICLES ==========
     if (m_showParticles && m_particles) {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -1193,7 +1179,6 @@ void Realtime::mousePressEvent(QMouseEvent *event) {
         m_prev_mouse_pos = glm::vec2(event->position().x(), event->position().y());
     }
 
-    // Terrain interaction with left button
     if (m_showTerrain && event->buttons().testFlag(Qt::LeftButton)) {
         m_prevMousePosQt = event->pos();
 
@@ -1229,7 +1214,7 @@ void Realtime::mousePressEvent(QMouseEvent *event) {
                     placeFlagOnTerrain(m_hitPoint.x, m_hitPoint.y, 0.05f);
                 }
             }
-            // Terrain sculpting mode
+            // Terrain raking mode
             else {
                 float craterDepth = 0.005f;
                 float craterRadius = 0.01f;
@@ -1287,7 +1272,7 @@ glm::mat3 rotMat(glm::vec3 &u, float angle) {
 }
 
 void Realtime::mouseMoveEvent(QMouseEvent *event) {
-    // Terrain sculpting when dragging
+    // Terrain raking when dragging
     if (m_mouseDown && m_showTerrain && m_intersected == 1 && !m_placeObjectMode) {
 
         float fbWidth = size().width() * m_devicePixelRatio;
