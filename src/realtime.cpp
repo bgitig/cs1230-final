@@ -33,7 +33,6 @@ Realtime::Realtime(QWidget *parent)
     m_intersected = 0;
     m_showTerrain = true;
     m_placeObjectMode = false;
-    //m_currentModelIndex = -1;
 
     // If you must use this function, do not edit anything above this
 }
@@ -325,9 +324,9 @@ void Realtime::initializeGL() {
     m_bumpMapping.initialize();
 
     m_particles = nullptr;
-    m_showParticles = false;
+    m_showParticles = true;
 
-        initializeBaseModel();
+    initializeBaseModel();
 }
 
 void Realtime::cacheUniformLocations() {
@@ -530,7 +529,7 @@ void Realtime::placeObjectOnTerrain(float terrainX, float terrainY, PrimitiveTyp
     obj.color = glm::vec4(r, g, b, 1.0f);
 
     // Get appropriate vertex data based on type
-  //  std::vector<float> vertexData = getVertexDataForType(type);
+    //  std::vector<float> vertexData = getVertexDataForType(type);
 
     if (vertexData.empty()) {
         std::cerr << "Failed to get vertex data for object type" << std::endl;
@@ -578,8 +577,8 @@ void Realtime::placeObjectOnTerrain(float terrainX, float terrainY, PrimitiveTyp
     m_terrainObjects.push_back(obj);
 
     // debugging print! shouldn't need it anymore.
-   // std::cout << "Placed " << getObjectTypeName(type) << " at terrain ("
-   //           << terrainX << ", " << terrainY << "), height: " << terrainHeight << std::endl;
+    // std::cout << "Placed " << getObjectTypeName(type) << " at terrain ("
+    //           << terrainX << ", " << terrainY << "), height: " << terrainHeight << std::endl;
 
     if (m_particles) {
         glm::vec3 worldPos = glm::vec3(m_terrainWorldMatrix * glm::vec4(terrainX, terrainY, terrainHeight, 1.0f));
@@ -1304,7 +1303,7 @@ void Realtime::mouseMoveEvent(QMouseEvent *event) {
             if (distSq > 0.00005f) {
                 m_hitPoint = newHitPoint;
 
-                float craterDepth = 0.005f;
+                float craterDepth = 0.0025f;
                 float craterRadius = 0.02f;
 
                 std::vector<std::pair<float, float>> offsets = {

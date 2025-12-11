@@ -148,9 +148,10 @@ void turtle::drawCylinder(const glm::vec3& start, const glm::vec3& end, float ra
     }
     perp2 = glm::normalize(glm::cross(axis, perp1));
 
-    int segments = 8;
+    int segments = 12;
     float angleStep = 2.0f * M_PI / segments;
 
+    // ===== CYLINDER SIDES (existing code) =====
     for (int i = 0; i < segments; i++) {
         float angle1 = i * angleStep;
         float angle2 = (i + 1) * angleStep;
@@ -166,6 +167,7 @@ void turtle::drawCylinder(const glm::vec3& start, const glm::vec3& end, float ra
         glm::vec3 normal1 = glm::normalize(offset1);
         glm::vec3 normal2 = glm::normalize(offset2);
 
+        // Triangle 1
         m_vertexData.push_back(p1.x); m_vertexData.push_back(p1.y); m_vertexData.push_back(p1.z);
         m_vertexData.push_back(normal1.x); m_vertexData.push_back(normal1.y); m_vertexData.push_back(normal1.z);
         m_vertexData.push_back(static_cast<float>(m_currentIteration));
@@ -178,6 +180,7 @@ void turtle::drawCylinder(const glm::vec3& start, const glm::vec3& end, float ra
         m_vertexData.push_back(normal1.x); m_vertexData.push_back(normal1.y); m_vertexData.push_back(normal1.z);
         m_vertexData.push_back(static_cast<float>(m_currentIteration));
 
+        // Triangle 2
         m_vertexData.push_back(p2.x); m_vertexData.push_back(p2.y); m_vertexData.push_back(p2.z);
         m_vertexData.push_back(normal2.x); m_vertexData.push_back(normal2.y); m_vertexData.push_back(normal2.z);
         m_vertexData.push_back(static_cast<float>(m_currentIteration));
@@ -188,6 +191,58 @@ void turtle::drawCylinder(const glm::vec3& start, const glm::vec3& end, float ra
 
         m_vertexData.push_back(p3.x); m_vertexData.push_back(p3.y); m_vertexData.push_back(p3.z);
         m_vertexData.push_back(normal1.x); m_vertexData.push_back(normal1.y); m_vertexData.push_back(normal1.z);
+        m_vertexData.push_back(static_cast<float>(m_currentIteration));
+    }
+
+    // ===== ADD BOTTOM CAP (START) =====
+    glm::vec3 bottomNormal = -axis;  // Points backward
+    for (int i = 0; i < segments; i++) {
+        float angle1 = i * angleStep;
+        float angle2 = (i + 1) * angleStep;
+
+        glm::vec3 offset1 = radius * (cos(angle1) * perp1 + sin(angle1) * perp2);
+        glm::vec3 offset2 = radius * (cos(angle2) * perp1 + sin(angle2) * perp2);
+
+        glm::vec3 p1 = start + offset1;
+        glm::vec3 p2 = start + offset2;
+
+        // Triangle fan from center
+        m_vertexData.push_back(start.x); m_vertexData.push_back(start.y); m_vertexData.push_back(start.z);
+        m_vertexData.push_back(bottomNormal.x); m_vertexData.push_back(bottomNormal.y); m_vertexData.push_back(bottomNormal.z);
+        m_vertexData.push_back(static_cast<float>(m_currentIteration));
+
+        m_vertexData.push_back(p2.x); m_vertexData.push_back(p2.y); m_vertexData.push_back(p2.z);
+        m_vertexData.push_back(bottomNormal.x); m_vertexData.push_back(bottomNormal.y); m_vertexData.push_back(bottomNormal.z);
+        m_vertexData.push_back(static_cast<float>(m_currentIteration));
+
+        m_vertexData.push_back(p1.x); m_vertexData.push_back(p1.y); m_vertexData.push_back(p1.z);
+        m_vertexData.push_back(bottomNormal.x); m_vertexData.push_back(bottomNormal.y); m_vertexData.push_back(bottomNormal.z);
+        m_vertexData.push_back(static_cast<float>(m_currentIteration));
+    }
+
+    // ===== ADD TOP CAP (END) =====
+    glm::vec3 topNormal = axis;  // Points forward
+    for (int i = 0; i < segments; i++) {
+        float angle1 = i * angleStep;
+        float angle2 = (i + 1) * angleStep;
+
+        glm::vec3 offset1 = radius * (cos(angle1) * perp1 + sin(angle1) * perp2);
+        glm::vec3 offset2 = radius * (cos(angle2) * perp1 + sin(angle2) * perp2);
+
+        glm::vec3 p1 = end + offset1;
+        glm::vec3 p2 = end + offset2;
+
+        // Triangle fan from center
+        m_vertexData.push_back(end.x); m_vertexData.push_back(end.y); m_vertexData.push_back(end.z);
+        m_vertexData.push_back(topNormal.x); m_vertexData.push_back(topNormal.y); m_vertexData.push_back(topNormal.z);
+        m_vertexData.push_back(static_cast<float>(m_currentIteration));
+
+        m_vertexData.push_back(p1.x); m_vertexData.push_back(p1.y); m_vertexData.push_back(p1.z);
+        m_vertexData.push_back(topNormal.x); m_vertexData.push_back(topNormal.y); m_vertexData.push_back(topNormal.z);
+        m_vertexData.push_back(static_cast<float>(m_currentIteration));
+
+        m_vertexData.push_back(p2.x); m_vertexData.push_back(p2.y); m_vertexData.push_back(p2.z);
+        m_vertexData.push_back(topNormal.x); m_vertexData.push_back(topNormal.y); m_vertexData.push_back(topNormal.z);
         m_vertexData.push_back(static_cast<float>(m_currentIteration));
     }
 }

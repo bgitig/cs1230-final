@@ -164,31 +164,54 @@ vec3 calculateSpotLight(Light light, vec3 normal, vec3 fragPos, vec3 viewDir) {
 
 void main() {
     vec3 norm = normalize(Normal);
-        vec3 viewDir = normalize(cameraPos - FragPos);
+    vec3 viewDir = normalize(cameraPos - FragPos);
 
-        // Test 1: Just show normals
-        // FragColor = vec4(norm * 0.5 + 0.5, 1.0);
+    // Start with the object's own ambient color
+    // This ensures the object is visible even with no lights
+    vec3 result = m_cAmbient.rgb * m_cDiffuse.rgb * 0.5; // Base ambient color
 
-        // Test 2: Simple diffuse lighting (hardcoded light)
-        vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
-        float diff = max(dot(norm, lightDir), 0.0);
-        vec3 color = vec3(1.0, 0.0, 0.0) * diff + vec3(0.1, 0.1, 0.1); // red with ambient
+    // Calculate shadow for directional lights
+    float shadow = 0.0;
 
-        // Test 3: Check if lights array has data
-        if (numLights > 0) {
-            // At least one light exists
-            if (lights[0].type == 1) { // directional
-                vec3 lightDir = normalize(-lights[0].dir.xyz);
-                float diff = max(dot(norm, lightDir), 0.0);
-                color = m_cDiffuse.rgb * diff * lights[0].color.rgb;
-            } else if (lights[0].type == 0) { // point
-                vec3 lightDir = normalize(lights[0].pos.xyz - FragPos);
-                float diff = max(dot(norm, lightDir), 0.0);
-                color = m_cDiffuse.rgb * diff * lights[0].color.rgb;
-            }
-        } else {
-            color = vec3(0.0, 0.0, 0.0);
+    // Find the directional light for shadow calculation
+    for(int i = 0; i < numLights; i++) {
+        if(lights[i].type == 1) { // directional light
+            vec3 lightDir = normalize(-lights[i].dir.xyz);
+            shadow = ShadowCalculation(FragPosLightSpace, norm, lightDir);
+            break;
         }
+    }
 
-        FragColor = vec4(color, 1.0);
+    // Calculate lighting from all lights (if any exist)
+    for(int i = 0; i < numLights && i < 20; i++) {
+        if(lights[i].type == 0) { // point light
+            result += calculatePointLight(lights[i], norm, FragPos, viewDir);
+        } else if(lights[i].type == 1) { // directional light
+            result += calculateDirectionalLight(lights[i], norm, viewDir, shadow);
+        } else if(lights[i].type == 2) { // spot light
+            result += calculateSpotLight(lights[i], norm, FragPos, viewDir);
+        }
+    }
+
+    // If there are no lights OR if the lighting calculation resulted in near-black
+    // Fall back to showing the object's diffuse color with some basic shading
+    if (numLights == 0 || length(result) < 0.01) {
+        // Create simple directional light from camera for visibility
+        vec3 fakeLightDir = normalize(vec3(0.5, 0.7, 0.5));
+        float diff = max(dot(norm, fakeLightDir), 0.0);
+
+        // Use the object's actual color (m_cDiffuse) with basic lighting
+        result = m_cDiffuse.rgb * (0.3 + 0.7 * diff); // 30% ambient + 70% diffuse
+    }
+
+    // Clamp result to avoid HDR issues
+    result = clamp(result, 0.0, 1.0);
+
+    // Ensure minimum brightness - never go completely black
+    float brightness = dot(result, vec3(0.299, 0.587, 0.114));
+    if (brightness < 0.1) {
+        result = mix(result, m_cDiffuse.rgb * 0.5, 0.7);
+    }
+
+    FragColor = vec4(result, 1.0);
 }
