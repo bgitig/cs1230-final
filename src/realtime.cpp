@@ -188,7 +188,7 @@ void Realtime::finish() {
     }
 
     glDeleteTextures(1, &m_preprocessTexture);
-    glDeleteRenderbuffers(1, &m_preprocessDepthRBO);
+    // glDeleteRenderbuffers(1, &m_preprocessDepthRBO);
     glDeleteFramebuffers(1, &m_preprocessFBO);
 
     m_terrainObjects.clear();
@@ -198,6 +198,10 @@ void Realtime::finish() {
 
 void Realtime::initializeGL() {
     m_devicePixelRatio = this->devicePixelRatio();
+    m_screen_width = size().width() * m_devicePixelRatio;
+    m_screen_height = size().height() * m_devicePixelRatio;
+    m_fbo_width = m_screen_width;
+    m_fbo_height = m_screen_height;
 
     m_timer = startTimer(1000/60);
     m_elapsedTimer.start();
@@ -216,6 +220,10 @@ void Realtime::initializeGL() {
     glClearColor(0,0,0,1);
     m_shader = ShaderLoader::createShaderProgram(":/resources/shaders/default.vert", ":/resources/shaders/default.frag");
 
+    m_depthShader = ShaderLoader::createShaderProgram(
+        ":/resources/shaders/shadows.vert",
+        ":/resources/shaders/shadows.frag"
+        );
     bloomShader = ShaderLoader::createShaderProgram(":/resources/shaders/bloom.vert", ":/resources/shaders/bloom.frag");
     godraysShader = ShaderLoader::createShaderProgram(":/resources/shaders/godrays.vert", ":/resources/shaders/godrays.frag");
     fogShader = ShaderLoader::createShaderProgram(":/resources/shaders/fog.vert", ":/resources/shaders/fog.frag");
@@ -226,6 +234,62 @@ void Realtime::initializeGL() {
     // skybox!
     m_skybox.init();
 
+
+
+    defaultFBO = 6;
+
+
+    // Create color texture
+    glGenTextures(1, &m_preprocessTexture);
+    glBindTexture(GL_TEXTURE_2D, m_preprocessTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m_fbo_width, m_fbo_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    // hdr tex for bloom
+    glGenTextures(1, &hdrTex);
+    glBindTexture(GL_TEXTURE_2D, hdrTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m_fbo_width, m_fbo_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    // occlusion tex for godrays
+    glGenTextures(1, &occTex);
+    glBindTexture(GL_TEXTURE_2D, occTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m_fbo_width, m_fbo_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    // depth tex for fog
+    glGenTextures(1, &depthTex);
+    glBindTexture(GL_TEXTURE_2D, depthTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, m_fbo_width, m_fbo_height, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    // Initialize preprocessing FBO
+    glGenFramebuffers(1, &m_preprocessFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, m_preprocessFBO);
+
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                           GL_TEXTURE_2D, m_preprocessTexture, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, hdrTex, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, occTex, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthTex, 0);
+
+    attachments[0] = GL_COLOR_ATTACHMENT0;
+    attachments[1] = GL_COLOR_ATTACHMENT1;
+    attachments[2] = GL_COLOR_ATTACHMENT2;
+    glDrawBuffers(3, attachments);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        std::cerr << "ERROR: Preprocessing framebuffer is not complete!" << std::endl;
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, defaultFBO);
 
     // Shadow mapping initialization
     glGenFramebuffers(1, &m_depthMapFBO);
@@ -253,76 +317,7 @@ void Realtime::initializeGL() {
         std::cerr << "ERROR: Shadow framebuffer is not complete!" << std::endl;
     }
 
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-    m_depthShader = ShaderLoader::createShaderProgram(
-        ":/resources/shaders/shadows.vert",
-        ":/resources/shaders/shadows.frag"
-        );
-
-    defaultFBO = 5;
-
-    // Initialize preprocessing FBO
-    glGenFramebuffers(1, &m_preprocessFBO);
-    glBindFramebuffer(GL_FRAMEBUFFER, m_preprocessFBO);
-
-    // Create color texture
-    glGenTextures(1, &m_preprocessTexture);
-    glBindTexture(GL_TEXTURE_2D, m_preprocessTexture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
-                 size().width() * m_devicePixelRatio,
-                 size().height() * m_devicePixelRatio,
-                 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-    // hdr tex for bloom
-    glGenTextures(1, &hdrTex);
-    glBindTexture(GL_TEXTURE_2D, hdrTex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m_fbo_width, m_fbo_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glBindTexture(GL_TEXTURE_2D, 0);
-
-    // occlusion tex for godrays
-    glGenTextures(1, &occTex);
-    glBindTexture(GL_TEXTURE_2D, occTex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m_fbo_width, m_fbo_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glBindTexture(GL_TEXTURE_2D, 0);
-
-    // depth tex for fog
-    glGenTextures(1, &depthTex);
-    glBindTexture(GL_TEXTURE_2D, depthTex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, m_fbo_width, m_fbo_height, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glBindTexture(GL_TEXTURE_2D, 0);
-
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                           GL_TEXTURE_2D, m_preprocessTexture, 0);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, hdrTex, 0);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, occTex, 0);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthTex, 0);
-
-    // Create depth renderbuffer
-    glGenRenderbuffers(1, &m_preprocessDepthRBO);
-    glBindRenderbuffer(GL_RENDERBUFFER, m_preprocessDepthRBO);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24,
-                          size().width() * m_devicePixelRatio,
-                          size().height() * m_devicePixelRatio);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
-                              GL_RENDERBUFFER, m_preprocessDepthRBO);
-
-    attachments[0] = GL_COLOR_ATTACHMENT0;
-    attachments[1] = GL_COLOR_ATTACHMENT1;
-    attachments[2] = GL_COLOR_ATTACHMENT2;
-    glDrawBuffers(3, attachments);
-
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        std::cerr << "ERROR: Preprocessing framebuffer is not complete!" << std::endl;
-    }
+    glBindFramebuffer(GL_FRAMEBUFFER, defaultFBO);
 
     // bloom fbo
     glGenFramebuffers(2, bloomFBO);
@@ -354,8 +349,6 @@ void Realtime::initializeGL() {
     glBindFramebuffer(GL_FRAMEBUFFER, godraysFBO);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, godraysTex, 0);
     glBindFramebuffer(GL_FRAMEBUFFER, defaultFBO);
-
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     // screen quad info
     std::vector<GLfloat> fullscreen_quad_data =
@@ -1048,7 +1041,8 @@ void Realtime::paintGL() {
         glDisable(GL_BLEND);
     }
 
-    // BLOOM PASS
+
+    // // BLOOM PASS
     bool horizontal = true;
     bool first = true;
     int amount = 10;
@@ -1072,7 +1066,7 @@ void Realtime::paintGL() {
         glBindTexture(GL_TEXTURE_2D, 0);
     }
 
-    // GODRAYS PASS
+    // // GODRAYS PASS
     glBindFramebuffer(GL_FRAMEBUFFER, godraysFBO);
 
     glViewport(0, 0, size().width()*2.f*m_devicePixelRatio,size().height()*2.f*m_devicePixelRatio);
@@ -1101,13 +1095,11 @@ void Realtime::paintGL() {
     glDrawArrays(GL_TRIANGLES, 0, 6);
 
     glBindFramebuffer(GL_FRAMEBUFFER, defaultFBO);
-
     glUseProgram(fogShader);
-
     glBindVertexArray(m_fullscreen_vao);
 
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, m_preprocessTexture);
+    glBindTexture(GL_TEXTURE_2D, godraysTex);
     glUniform1i(glGetUniformLocation(fogShader, "scene"), 0);
 
     glActiveTexture(GL_TEXTURE1);
@@ -1125,12 +1117,19 @@ void Realtime::paintGL() {
     glUniform1f(glGetUniformLocation(fogShader, "near"), nearFog);
     glUniform1f(glGetUniformLocation(fogShader, "far"), farFog);
 
+
+    // glBindFramebuffer(GL_FRAMEBUFFER, defaultFBO);
+    // glUseProgram(fogShader);
+    // glBindVertexArray(m_fullscreen_vao);
+    // glActiveTexture(GL_TEXTURE0);
+    // glBindTexture(GL_TEXTURE_2D, m_preprocessTexture);
+    // glUniform1i(glGetUniformLocation(fogShader, "scene"), 0);
     glDrawArrays(GL_TRIANGLES, 0, 6);
 
     // //copy to default
     // glBindFramebuffer(GL_DRAW_FRAMEBUFFER, defaultFramebufferObject());
     // glBlitFramebuffer(
-    //     0, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio,
+    //     1, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio,
     //     0, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio,
     //     GL_COLOR_BUFFER_BIT, GL_NEAREST
     //     );
@@ -1143,14 +1142,15 @@ void Realtime::paintGL() {
 }
 
 void Realtime::resizeGL(int w, int h) {
-    glBindTexture(GL_TEXTURE_2D, m_preprocessTexture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
-                 w * m_devicePixelRatio, h * m_devicePixelRatio,
-                 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    // glBindTexture(GL_TEXTURE_2D, m_preprocessTexture);
+    // glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
+    //              w * m_devicePixelRatio, h * m_devicePixelRatio,
+    //              0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 
-    glBindRenderbuffer(GL_RENDERBUFFER, m_preprocessDepthRBO);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24,
-                          w * m_devicePixelRatio, h * m_devicePixelRatio);
+    // glBindRenderbuffer(GL_RENDERBUFFER, m_preprocessDepthRBO);
+    // glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24,
+    //                       w * m_devicePixelRatio, h * m_devicePixelRatio);
+    glViewport(0, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio);
 }
 
 void Realtime::updateCamera() {

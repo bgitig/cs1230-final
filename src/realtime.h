@@ -195,11 +195,6 @@ private:
     void updateCamera();
     void updateLights();
 
-    // Shadow mapping variables
-    GLuint m_depthMapFBO;
-    GLuint m_depthMap;
-    GLuint m_depthShader;
-    glm::mat4 m_lightSpaceMatrix;
 
     const unsigned int SHADOW_WIDTH = 1024;
     const unsigned int SHADOW_HEIGHT = 1024;
@@ -306,6 +301,13 @@ private:
     int m_fbo_height;
     int m_screen_width;
     int m_screen_height;
+
+    // Shadow mapping variables
+    GLuint m_depthMapFBO;
+    GLuint m_depthMap;
+    GLuint m_depthShader;
+    glm::mat4 m_lightSpaceMatrix;
+    // post processing
     GLuint m_preprocessFBO, m_preprocessTexture, m_preprocessDepthRBO, hdrTex, occTex, depthTex, attachments[3];
     GLuint bloomFBO[2], bloomTex[2];
     GLuint godraysFBO, godraysTex;

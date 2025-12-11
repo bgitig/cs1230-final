@@ -97,6 +97,12 @@ qt6_add_resources(${PROJECT_NAME} "Resources"
         resources/shaders/terrain.vert
         resources/shaders/bump.frag
         resources/shaders/bump.vert
+resources/shaders/bloom.vert
+resources/shaders/bloom.frag
+resources/shaders/godrays.vert
+resources/shaders/godrays.frag
+resources/shaders/fog.vert
+resources/shaders/fog.frag
 )
 
 qt_add_resources(sky.qrc)
