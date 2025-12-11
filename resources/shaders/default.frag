@@ -5,7 +5,6 @@ out vec4 FragColor;
 in vec3 FragPos;
 in vec3 Normal;
 in vec4 FragPosLightSpace;
-in vec2 TexCoords;  // NEW: Add this input for UV coordinates
 
 struct Light {
     int type;
@@ -28,10 +27,6 @@ uniform vec4 m_cAmbient;
 uniform vec4 m_cDiffuse;
 uniform vec4 m_cSpecular;
 uniform float shininess;
-
-// NEW: Texture uniforms
-uniform sampler2D flagTexture;
-uniform bool useTexture;
 
 // shadows!!
 uniform sampler2D shadowMap;
@@ -72,7 +67,7 @@ float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir) {
     return shadow;
 }
 
-vec3 calculatePointLight(Light light, vec3 normal, vec3 fragPos, vec3 viewDir, vec4 baseColor) {
+vec3 calculatePointLight(Light light, vec3 normal, vec3 fragPos, vec3 viewDir) {
     vec3 lightDir = normalize(light.pos.xyz - fragPos);
 
     // diffuse
@@ -86,9 +81,9 @@ vec3 calculatePointLight(Light light, vec3 normal, vec3 fragPos, vec3 viewDir, v
     float distance = length(light.pos.xyz - fragPos);
     float attenuation = 1.0 / (light.function.x + light.function.y * distance + light.function.z * (distance * distance));
 
-    // accumulation - MODIFIED to use baseColor
+    // accumulation
     vec3 ambient = m_ka * m_cAmbient.rgb * light.color.rgb;
-    vec3 diffuse = m_kd * baseColor.rgb * diff * light.color.rgb;  // Use baseColor
+    vec3 diffuse = m_kd * m_cDiffuse.rgb * diff * light.color.rgb;
     vec3 specular = m_ks * m_cSpecular.rgb * spec * light.color.rgb;
 
     ambient *= attenuation;
@@ -98,7 +93,7 @@ vec3 calculatePointLight(Light light, vec3 normal, vec3 fragPos, vec3 viewDir, v
     return ambient + diffuse + specular;
 }
 
-vec3 calculateDirectionalLight(Light light, vec3 normal, vec3 viewDir, float shadow, vec4 baseColor) {
+vec3 calculateDirectionalLight(Light light, vec3 normal, vec3 viewDir, float shadow) {
     vec3 lightDir = normalize(-light.dir.xyz);
 
     // diffuse
@@ -108,9 +103,9 @@ vec3 calculateDirectionalLight(Light light, vec3 normal, vec3 viewDir, float sha
     vec3 reflectDir = reflect(-lightDir, normal);
     float spec = pow(max(dot(viewDir, reflectDir), 0.0), shininess);
 
-    // accumulation - MODIFIED to use baseColor
+    // accumulation
     vec3 ambient = m_ka * m_cAmbient.rgb * light.color.rgb;
-    vec3 diffuse = m_kd * baseColor.rgb * diff * light.color.rgb;  // Use baseColor
+    vec3 diffuse = m_kd * m_cDiffuse.rgb * diff * light.color.rgb;
     vec3 specular = m_ks * m_cSpecular.rgb * spec * light.color.rgb;
 
     // shadow time!
@@ -121,10 +116,11 @@ vec3 calculateDirectionalLight(Light light, vec3 normal, vec3 viewDir, float sha
     return ambient + diffuse + specular;
 }
 
-vec3 calculateSpotLight(Light light, vec3 normal, vec3 fragPos, vec3 viewDir, vec4 baseColor) {
+vec3 calculateSpotLight(Light light, vec3 normal, vec3 fragPos, vec3 viewDir) {
     vec3 lightDir = normalize(light.pos.xyz - fragPos);
     vec3 spotDir = normalize(-light.dir.xyz);
     float theta = dot(lightDir, spotDir);
+
 
     float outerCutoff = cos(light.angle);
     float innerCutoff = cos(light.angle * 0.8);
@@ -151,9 +147,9 @@ vec3 calculateSpotLight(Light light, vec3 normal, vec3 fragPos, vec3 viewDir, ve
         float attenuation = 1.0 / (light.function.x + light.function.y * distance +
                                   light.function.z * (distance * distance));
 
-        // accumulate - MODIFIED to use baseColor
+        // accumulate
         vec3 ambient = m_ka * m_cAmbient.rgb * light.color.rgb;
-        vec3 diffuse = m_kd * baseColor.rgb * diff * light.color.rgb;  // Use baseColor
+        vec3 diffuse = m_kd * m_cDiffuse.rgb * diff * light.color.rgb;
         vec3 specular = m_ks * m_cSpecular.rgb * spec * light.color.rgb;
 
         ambient *= attenuation * intensity;
@@ -170,34 +166,52 @@ void main() {
     vec3 norm = normalize(Normal);
     vec3 viewDir = normalize(cameraPos - FragPos);
 
+    // Start with the object's own ambient color
+    // This ensures the object is visible even with no lights
+    vec3 result = m_cAmbient.rgb * m_cDiffuse.rgb * 0.5; // Base ambient color
 
-    // NEW: Get base color from texture or uniform
-    vec4 baseColor;
-    if (useTexture) {
-        baseColor = texture(flagTexture, TexCoords);
-    } else {
-        baseColor = m_cDiffuse;
-    }
+    // Calculate shadow for directional lights
+    float shadow = 0.0;
 
-    // Simple lighting for testing
-    vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
-    float diff = max(dot(norm, lightDir), 0.0);
-    vec3 color = baseColor.rgb * diff + vec3(0.1, 0.1, 0.1); // Use baseColor with ambient
-
-    // Use proper lighting if lights exist
-    if (numLights > 0) {
-        color = vec3(0.0);
-        for (int i = 0; i < numLights && i < 8; i++) {
-            if (lights[i].type == 1) { // directional
-                float shadow = ShadowCalculation(FragPosLightSpace, norm, normalize(-lights[i].dir.xyz));
-                color += calculateDirectionalLight(lights[i], norm, viewDir, shadow, baseColor);
-            } else if (lights[i].type == 0) { // point
-                color += calculatePointLight(lights[i], norm, FragPos, viewDir, baseColor);
-            } else if (lights[i].type == 2) { // spot
-                color += calculateSpotLight(lights[i], norm, FragPos, viewDir, baseColor);
-            }
+    // Find the directional light for shadow calculation
+    for(int i = 0; i < numLights; i++) {
+        if(lights[i].type == 1) { // directional light
+            vec3 lightDir = normalize(-lights[i].dir.xyz);
+            shadow = ShadowCalculation(FragPosLightSpace, norm, lightDir);
+            break;
         }
     }
 
-    FragColor = vec4(color, baseColor.a);
+    // Calculate lighting from all lights (if any exist)
+    for(int i = 0; i < numLights && i < 20; i++) {
+        if(lights[i].type == 0) { // point light
+            result += calculatePointLight(lights[i], norm, FragPos, viewDir);
+        } else if(lights[i].type == 1) { // directional light
+            result += calculateDirectionalLight(lights[i], norm, viewDir, shadow);
+        } else if(lights[i].type == 2) { // spot light
+            result += calculateSpotLight(lights[i], norm, FragPos, viewDir);
+        }
+    }
+
+    // If there are no lights OR if the lighting calculation resulted in near-black
+    // Fall back to showing the object's diffuse color with some basic shading
+    if (numLights == 0 || length(result) < 0.01) {
+        // Create simple directional light from camera for visibility
+        vec3 fakeLightDir = normalize(vec3(0.5, 0.7, 0.5));
+        float diff = max(dot(norm, fakeLightDir), 0.0);
+
+        // Use the object's actual color (m_cDiffuse) with basic lighting
+        result = m_cDiffuse.rgb * (0.3 + 0.7 * diff); // 30% ambient + 70% diffuse
+    }
+
+    // Clamp result to avoid HDR issues
+    result = clamp(result, 0.0, 1.0);
+
+    // Ensure minimum brightness - never go completely black
+    float brightness = dot(result, vec3(0.299, 0.587, 0.114));
+    if (brightness < 0.1) {
+        result = mix(result, m_cDiffuse.rgb * 0.5, 0.7);
+    }
+
+    FragColor = vec4(result, 1.0);
 }
