@@ -230,11 +230,9 @@ void Realtime::initializeGL() {
 
     setUp();
 
-
     // skybox!
     m_skybox.init();
-
-
+    godrayLightPos = glm::vec4(0.f, 4.f, -2.f, 1.f);
 
     defaultFBO = 6;
 

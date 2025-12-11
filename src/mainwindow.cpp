@@ -52,10 +52,10 @@ void MainWindow::initialize() {
         return btn;
     };
 
-    treeMode  = makeIconButton("/cs1230/cs1230-final/svg/tree.svg");
-    rockMode  = makeIconButton("/cs1230/cs1230-final/svg/rock.svg");
-    rakeMode  = makeIconButton("/cs1230/cs1230-final/svg/rake.svg");
-    camMode  = makeIconButton("/cs1230/cs1230-final/svg/cam.svg");
+    treeMode  = makeIconButton(":/svg/tree.svg");
+    rockMode  = makeIconButton(":/svg/rock.svg");
+    rakeMode  = makeIconButton(":/svg/rake.svg");
+    camMode  = makeIconButton(":/svg/cam.svg");
 
 
     QButtonGroup *group = new QButtonGroup(this);
