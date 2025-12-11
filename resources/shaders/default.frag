@@ -5,6 +5,7 @@ out vec4 FragColor;
 in vec3 FragPos;
 in vec3 Normal;
 in vec4 FragPosLightSpace;
+in vec2 TexCoords;  // NEW: Add this input for UV coordinates
 
 struct Light {
     int type;
@@ -27,6 +28,10 @@ uniform vec4 m_cAmbient;
 uniform vec4 m_cDiffuse;
 uniform vec4 m_cSpecular;
 uniform float shininess;
+
+// NEW: Texture uniforms
+uniform sampler2D flagTexture;
+uniform bool useTexture;
 
 // shadows!!
 uniform sampler2D shadowMap;
@@ -67,7 +72,7 @@ float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir) {
     return shadow;
 }
 
-vec3 calculatePointLight(Light light, vec3 normal, vec3 fragPos, vec3 viewDir) {
+vec3 calculatePointLight(Light light, vec3 normal, vec3 fragPos, vec3 viewDir, vec4 baseColor) {
     vec3 lightDir = normalize(light.pos.xyz - fragPos);
 
     // diffuse
@@ -81,9 +86,9 @@ vec3 calculatePointLight(Light light, vec3 normal, vec3 fragPos, vec3 viewDir) {
     float distance = length(light.pos.xyz - fragPos);
     float attenuation = 1.0 / (light.function.x + light.function.y * distance + light.function.z * (distance * distance));
 
-    // accumulation
+    // accumulation - MODIFIED to use baseColor
     vec3 ambient = m_ka * m_cAmbient.rgb * light.color.rgb;
-    vec3 diffuse = m_kd * m_cDiffuse.rgb * diff * light.color.rgb;
+    vec3 diffuse = m_kd * baseColor.rgb * diff * light.color.rgb;  // Use baseColor
     vec3 specular = m_ks * m_cSpecular.rgb * spec * light.color.rgb;
 
     ambient *= attenuation;
@@ -93,7 +98,7 @@ vec3 calculatePointLight(Light light, vec3 normal, vec3 fragPos, vec3 viewDir) {
     return ambient + diffuse + specular;
 }
 
-vec3 calculateDirectionalLight(Light light, vec3 normal, vec3 viewDir, float shadow) {
+vec3 calculateDirectionalLight(Light light, vec3 normal, vec3 viewDir, float shadow, vec4 baseColor) {
     vec3 lightDir = normalize(-light.dir.xyz);
 
     // diffuse
@@ -103,9 +108,9 @@ vec3 calculateDirectionalLight(Light light, vec3 normal, vec3 viewDir, float sha
     vec3 reflectDir = reflect(-lightDir, normal);
     float spec = pow(max(dot(viewDir, reflectDir), 0.0), shininess);
 
-    // accumulation
+    // accumulation - MODIFIED to use baseColor
     vec3 ambient = m_ka * m_cAmbient.rgb * light.color.rgb;
-    vec3 diffuse = m_kd * m_cDiffuse.rgb * diff * light.color.rgb;
+    vec3 diffuse = m_kd * baseColor.rgb * diff * light.color.rgb;  // Use baseColor
     vec3 specular = m_ks * m_cSpecular.rgb * spec * light.color.rgb;
 
     // shadow time!
@@ -116,11 +121,10 @@ vec3 calculateDirectionalLight(Light light, vec3 normal, vec3 viewDir, float sha
     return ambient + diffuse + specular;
 }
 
-vec3 calculateSpotLight(Light light, vec3 normal, vec3 fragPos, vec3 viewDir) {
+vec3 calculateSpotLight(Light light, vec3 normal, vec3 fragPos, vec3 viewDir, vec4 baseColor) {
     vec3 lightDir = normalize(light.pos.xyz - fragPos);
     vec3 spotDir = normalize(-light.dir.xyz);
     float theta = dot(lightDir, spotDir);
-
 
     float outerCutoff = cos(light.angle);
     float innerCutoff = cos(light.angle * 0.8);
@@ -147,9 +151,9 @@ vec3 calculateSpotLight(Light light, vec3 normal, vec3 fragPos, vec3 viewDir) {
         float attenuation = 1.0 / (light.function.x + light.function.y * distance +
                                   light.function.z * (distance * distance));
 
-        // accumulate
+        // accumulate - MODIFIED to use baseColor
         vec3 ambient = m_ka * m_cAmbient.rgb * light.color.rgb;
-        vec3 diffuse = m_kd * m_cDiffuse.rgb * diff * light.color.rgb;
+        vec3 diffuse = m_kd * baseColor.rgb * diff * light.color.rgb;  // Use baseColor
         vec3 specular = m_ks * m_cSpecular.rgb * spec * light.color.rgb;
 
         ambient *= attenuation * intensity;
@@ -164,32 +168,35 @@ vec3 calculateSpotLight(Light light, vec3 normal, vec3 fragPos, vec3 viewDir) {
 
 void main() {
     vec3 norm = normalize(Normal);
-        vec3 viewDir = normalize(cameraPos - FragPos);
+    vec3 viewDir = normalize(cameraPos - FragPos);
 
-        // Test 1: Just show normals
-        // FragColor = vec4(norm * 0.5 + 0.5, 1.0);
+    // NEW: Get base color from texture or uniform
+    vec4 baseColor;
+    if (useTexture) {
+        baseColor = texture(flagTexture, TexCoords);
+    } else {
+        baseColor = m_cDiffuse;
+    }
 
-        // Test 2: Simple diffuse lighting (hardcoded light)
-        vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
-        float diff = max(dot(norm, lightDir), 0.0);
-        vec3 color = vec3(1.0, 0.0, 0.0) * diff + vec3(0.1, 0.1, 0.1); // red with ambient
+    // Simple lighting for testing
+    vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
+    float diff = max(dot(norm, lightDir), 0.0);
+    vec3 color = baseColor.rgb * diff + vec3(0.1, 0.1, 0.1); // Use baseColor with ambient
 
-        // Test 3: Check if lights array has data
-        if (numLights > 0) {
-            // At least one light exists
-            if (lights[0].type == 1) { // directional
-                vec3 lightDir = normalize(-lights[0].dir.xyz);
-                float diff = max(dot(norm, lightDir), 0.0);
-                color = m_cDiffuse.rgb * diff * lights[0].color.rgb;
-            } else if (lights[0].type == 0) { // point
-                vec3 lightDir = normalize(lights[0].pos.xyz - FragPos);
-                float diff = max(dot(norm, lightDir), 0.0);
-                color = m_cDiffuse.rgb * diff * lights[0].color.rgb;
+    // Use proper lighting if lights exist
+    if (numLights > 0) {
+        color = vec3(0.0);
+        for (int i = 0; i < numLights && i < 8; i++) {
+            if (lights[i].type == 1) { // directional
+                float shadow = ShadowCalculation(FragPosLightSpace, norm, normalize(-lights[i].dir.xyz));
+                color += calculateDirectionalLight(lights[i], norm, viewDir, shadow, baseColor);
+            } else if (lights[i].type == 0) { // point
+                color += calculatePointLight(lights[i], norm, FragPos, viewDir, baseColor);
+            } else if (lights[i].type == 2) { // spot
+                color += calculateSpotLight(lights[i], norm, FragPos, viewDir, baseColor);
             }
-        } else {
-            // No lights - show blue
-            color = vec3(0.0, 0.0, 1.0);
         }
+    }
 
-        FragColor = vec4(color, 1.0);
+    FragColor = vec4(color, baseColor.a);
 }

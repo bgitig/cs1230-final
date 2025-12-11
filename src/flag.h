@@ -52,6 +52,11 @@ public:
     //for collision
     void setTerrain(Terrain* terrain, const glm::mat4& worldMatrix);
 
+    //textures
+    bool loadTexture(const std::string& filepath);
+    void enableTexture(bool enable) { m_useTexture = enable; }
+    GLuint getTextureID() const { return m_textureID; }
+
 private:
     void createMesh(int width, int height, float spacing, const glm::vec3& anchorPos);
     void addSpring(int p1, int p2, float stiffness);
@@ -93,4 +98,9 @@ private:
     Terrain* m_terrain;
     glm::mat4 m_worldMatrix;
     bool m_hasTerrainCollision;
+
+
+    //textures
+    GLuint m_textureID;
+    bool m_useTexture;
 };

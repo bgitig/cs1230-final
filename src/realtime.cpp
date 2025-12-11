@@ -694,6 +694,20 @@ void Realtime::paintGL() {
 
         obj.flagSimulation->renderPole();
 
+        if (obj.flagSimulation->getTextureID() != 0) {
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, obj.flagSimulation->getTextureID());
+
+            GLint texLoc = glGetUniformLocation(m_shader, "flagTexture");
+            if (texLoc != -1) glUniform1i(texLoc, 0);
+
+            GLint useTexLoc = glGetUniformLocation(m_shader, "useTexture");
+            if (useTexLoc != -1) glUniform1i(useTexLoc, 1);
+        } else {
+            GLint useTexLoc = glGetUniformLocation(m_shader, "useTexture");
+            if (useTexLoc != -1) glUniform1i(useTexLoc, 0);
+        }
+
         // Render flag cloth
         if (m_uniformLocs.cAmbient != -1) glUniform4fv(m_uniformLocs.cAmbient, 1, &obj.color[0]);
         if (m_uniformLocs.cDiffuse != -1) glUniform4fv(m_uniformLocs.cDiffuse, 1, &obj.color[0]);
@@ -1441,18 +1455,36 @@ void Realtime::placeFlagOnTerrain(float terrainX, float terrainY, float size) {
     obj.growthInterval = 0.0f;
 
     // Create flag simulation
+
+    Flag* flag = new Flag();
+
+    // Anchor at TOP of pole, not bottom
+    float poleHeight = 0.15f;  // Height of pole
+    glm::vec3 anchorPos = glm::vec3(0.0f, 0.0f, poleHeight);  // Start at top
+
+    flag->initialize(20, 15, 0.01f, anchorPos);
+    flag->setTerrain(&m_terrain, m_terrainWorldMatrix);
+
+    /*
     Flag* flag = new Flag();
     glm::vec3 anchorPos = glm::vec3(0.0f, 0.0f, 0.0f);
     flag->initialize(20, 15, 0.01f, anchorPos);  // Smaller spacing: 0.01
     flag->setTerrain(&m_terrain, m_terrainWorldMatrix);
-
+*/
+    flag->loadTexture(":/resources/images/prof.jpg");
     obj.flagSimulation = flag;
 
+    glm::mat4 modelMatrix = glm::mat4(1.0f);
+    modelMatrix = glm::translate(modelMatrix, glm::vec3(terrainX, terrainY, terrainHeight));
+    obj.modelMatrix = modelMatrix;
+
+    /*
     // Transformation matrix - reasonable size
     glm::mat4 modelMatrix = glm::mat4(1.0f);
     modelMatrix = glm::translate(modelMatrix, glm::vec3(terrainX, terrainY, terrainHeight + 0.05f));  // Slight raise
     modelMatrix = glm::scale(modelMatrix, glm::vec3(1.0f));  // Normal size: 1.0
     obj.modelMatrix = modelMatrix;
+*/
 
     // Red flag
     obj.color = glm::vec4(0.8f, 0.1f, 0.1f, 1.0f);
