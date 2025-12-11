@@ -6,7 +6,7 @@
 Flag::Flag()
     : m_width(0), m_height(0), m_spacing(0.0f),
     m_windForce(10.0f, 0.0f, 0.0f), //FOR WIND CONTROL
-    m_gravity(0.0f, 0.0f, -9.8f),
+    m_gravity(0.0f, 0.0f, 0.0f),
     m_springStiffness(50.0f),
     m_springDamping(0.25f),
     m_terrain(nullptr), m_hasTerrainCollision(false),
