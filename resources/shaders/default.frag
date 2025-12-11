@@ -2,6 +2,10 @@
 
 out vec4 FragColor;
 
+layout (location = 0) out vec4 sceneColor;
+layout (location = 1) out vec4 hdrColor;
+layout (location = 2) out vec4 occColor;
+
 in vec3 FragPos;
 in vec3 Normal;
 in vec4 FragPosLightSpace;
@@ -214,4 +218,5 @@ void main() {
     }
 
     FragColor = vec4(result, 1.0);
+
 }

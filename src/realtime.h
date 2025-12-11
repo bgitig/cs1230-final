@@ -198,11 +198,6 @@ private:
     void updateCamera();
     void updateLights();
 
-    // Shadow mapping variables
-    GLuint m_depthMapFBO;
-    GLuint m_depthMap;
-    GLuint m_depthShader;
-    glm::mat4 m_lightSpaceMatrix;
 
     const unsigned int SHADOW_WIDTH = 1024;
     const unsigned int SHADOW_HEIGHT = 1024;
@@ -321,8 +316,26 @@ private:
     Particles* m_particles;
     bool m_showParticles;
 
-    GLuint m_preprocessFBO;
-    GLuint m_preprocessTexture;
-    GLuint m_preprocessDepthRBO;
 
+    GLuint m_fullscreen_vao, m_fullscreen_vbo;
+    int m_fbo_width;
+    int m_fbo_height;
+    int m_screen_width;
+    int m_screen_height;
+
+    // Shadow mapping variables
+    GLuint m_depthMapFBO;
+    GLuint m_depthMap;
+    GLuint m_depthShader;
+    glm::mat4 m_lightSpaceMatrix;
+    // post processing
+    GLuint m_preprocessFBO, m_preprocessTexture, m_preprocessDepthRBO, hdrTex, occTex, depthTex, attachments[3];
+    GLuint bloomFBO[2], bloomTex[2];
+    GLuint godraysFBO, godraysTex;
+    GLuint defaultFBO;
+
+    GLuint bloomShader, godraysShader, fogShader;
+    glm::vec4 godrayLightPos;
+    float nearFog = 5.f;
+    float farFog = 25.f;
 };

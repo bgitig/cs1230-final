@@ -2,6 +2,8 @@
 #define MOUSE_H
 #include "glm/glm.hpp"
 #include <iostream>
+#include <optional>
+#include <vector>
 
 class mouse
 {
