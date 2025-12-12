@@ -56,6 +56,7 @@ void MainWindow::initialize() {
     rockMode  = makeIconButton(":/svg/rock.svg");
     rakeMode  = makeIconButton(":/svg/rake.svg");
     camMode  = makeIconButton(":/svg/cam.svg");
+    lightMode  = makeIconButton(":/svg/light.svg");
 
 
     QButtonGroup *group = new QButtonGroup(this);
@@ -64,6 +65,7 @@ void MainWindow::initialize() {
     group->addButton(rockMode);
     group->addButton(rakeMode);
     group->addButton(camMode);
+    group->addButton(lightMode);
 
     QVBoxLayout *buttonLayout = new QVBoxLayout();
     buttonLayout->setAlignment(Qt::AlignCenter);
@@ -73,6 +75,8 @@ void MainWindow::initialize() {
     buttonLayout->addWidget(rockMode);
     buttonLayout->addWidget(rakeMode);
     buttonLayout->addWidget(camMode);
+    buttonLayout->addWidget(lightMode);
+
 
     vLayout->addStretch();
     vLayout->addLayout(buttonLayout);
@@ -96,6 +100,7 @@ void MainWindow::connectUIElements() {
     connectRockMode();
     connectRakeMode();
     connectCamMode();
+    connectLightMode();
 }
 
 void MainWindow::connectTreeMode() {
@@ -159,5 +164,25 @@ void MainWindow::onCamMode() {
     settings.rockMode = false;
     settings.rakeMode = false;
     settings.camMode = true;
+    realtime->settingsChanged();
+}
+
+void MainWindow::connectLightMode() {
+    connect(lightMode, &QPushButton::clicked, this, &MainWindow::onLightMode);
+}
+void MainWindow::onLightMode() {
+    treeMode->setChecked(false);
+    rockMode->setChecked(false);
+    rakeMode->setChecked(false);
+    camMode->setChecked(false);
+
+    lightMode->setChecked(false);
+
+    settings.treeMode = false;
+    settings.rockMode = false;
+    settings.rakeMode = false;
+    settings.camMode = false;
+
+    settings.lightMode = false;
     realtime->settingsChanged();
 }

@@ -20,6 +20,7 @@ struct Settings {
     bool rockMode = false;
     bool rakeMode = false;
     bool camMode = true;
+    bool lightMode = true;
 };
 
 

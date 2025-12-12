@@ -10,9 +10,9 @@ out vec4 fragColor;
 
 in vec2 uv;
 
-float fog_maxdist = 15.0;
-float fog_mindist = 0.1;
-vec4  fog_color = vec4(0.2, 0.2, 0.2, 0.4);
+float fog_maxdist = 100.0;
+float fog_mindist = 50;
+vec4  fog_color = vec4(0.08, 0.08, 0.08, 0.1);
 
 void main()
 {   

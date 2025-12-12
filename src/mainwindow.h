@@ -24,6 +24,8 @@ private:
     void connectRockMode();
     void connectRakeMode();
     void connectCamMode();
+    void connectLightMode();
+
 
 
 
@@ -35,6 +37,8 @@ private:
     QPushButton *rakeMode;
     QPushButton *camMode;
 
+    QPushButton *lightMode;
+
 
 
 private slots:
@@ -43,5 +47,7 @@ private slots:
     void onRockMode();
     void onRakeMode();
     void onCamMode();
+    void onLightMode();
+
 
 };

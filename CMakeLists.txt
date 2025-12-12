@@ -109,7 +109,21 @@ resources/shaders/fog.vert
 resources/shaders/fog.frag
 )
 
+qt6_add_resources(${PROJECT_NAME} "svg"
+    PREFIX
+        "/"
+    FILES
+        svg/rock.svg
+svg/tree.svg
+svg/cam.svg
+
+svg/light.svg
+
+svg/rake.svg
+)
+
 qt_add_resources(sky.qrc)
+qt_add_resources(base.qrc)
 
 # GLEW: this provides support for Windows (including 64-bit)
 if (WIN32)

@@ -8,6 +8,9 @@
 #include "glm/gtc/matrix_transform.hpp"
 #include "mouse.h"
 #include "terrain.h"
+#include <random>
+#include <glm/gtc/matrix_transform.hpp>
+
 
 
 // ================== Rendering the Scene!
@@ -197,6 +200,10 @@ void Realtime::finish() {
 
 void Realtime::initializeGL() {
     m_devicePixelRatio = this->devicePixelRatio();
+    m_screen_width = size().width() * m_devicePixelRatio;
+    m_screen_height = size().height() * m_devicePixelRatio;
+    m_fbo_width = m_screen_width;
+    m_fbo_height = m_screen_height;
 
     m_timer = startTimer(1000/60);
     m_elapsedTimer.start();
@@ -214,12 +221,75 @@ void Realtime::initializeGL() {
 
     glClearColor(0,0,0,1);
     m_shader = ShaderLoader::createShaderProgram(":/resources/shaders/default.vert", ":/resources/shaders/default.frag");
-    setUp();
 
+    m_depthShader = ShaderLoader::createShaderProgram(
+        ":/resources/shaders/shadows.vert",
+        ":/resources/shaders/shadows.frag"
+        );
+    bloomShader = ShaderLoader::createShaderProgram(":/resources/shaders/bloom.vert", ":/resources/shaders/bloom.frag");
+    godraysShader = ShaderLoader::createShaderProgram(":/resources/shaders/godrays.vert", ":/resources/shaders/godrays.frag");
+    fogShader = ShaderLoader::createShaderProgram(":/resources/shaders/fog.vert", ":/resources/shaders/fog.frag");
+
+    setUp();
 
     // skybox!
     m_skybox.init();
+    godrayLightPos = glm::vec4(0.f, 4.f, -2.f, 1.f);
 
+    defaultFBO = 6;
+
+
+    // Create color texture
+    glGenTextures(1, &m_preprocessTexture);
+    glBindTexture(GL_TEXTURE_2D, m_preprocessTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m_fbo_width, m_fbo_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    // hdr tex for bloom
+    glGenTextures(1, &hdrTex);
+    glBindTexture(GL_TEXTURE_2D, hdrTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m_fbo_width, m_fbo_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    // occlusion tex for godrays
+    glGenTextures(1, &occTex);
+    glBindTexture(GL_TEXTURE_2D, occTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m_fbo_width, m_fbo_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    // depth tex for fog
+    glGenTextures(1, &depthTex);
+    glBindTexture(GL_TEXTURE_2D, depthTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, m_fbo_width, m_fbo_height, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    // Initialize preprocessing FBO
+    glGenFramebuffers(1, &m_preprocessFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, m_preprocessFBO);
+
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                           GL_TEXTURE_2D, m_preprocessTexture, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, hdrTex, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, occTex, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthTex, 0);
+
+    attachments[0] = GL_COLOR_ATTACHMENT0;
+    attachments[1] = GL_COLOR_ATTACHMENT1;
+    attachments[2] = GL_COLOR_ATTACHMENT2;
+    glDrawBuffers(3, attachments);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        std::cerr << "ERROR: Preprocessing framebuffer is not complete!" << std::endl;
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, defaultFBO);
 
     // Shadow mapping initialization
     glGenFramebuffers(1, &m_depthMapFBO);
@@ -247,43 +317,62 @@ void Realtime::initializeGL() {
         std::cerr << "ERROR: Shadow framebuffer is not complete!" << std::endl;
     }
 
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, defaultFBO);
 
-    m_depthShader = ShaderLoader::createShaderProgram(
-        ":/resources/shaders/shadows.vert",
-        ":/resources/shaders/shadows.frag"
-        );
+    // bloom fbo
+    glGenFramebuffers(2, bloomFBO);
+    glGenTextures(2, bloomTex);
+    for (int i = 0; i < 2; i++)
+    {
+        glBindFramebuffer(GL_FRAMEBUFFER, bloomFBO[i]);
+        glBindTexture(GL_TEXTURE_2D, bloomTex[i]);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, m_fbo_width, m_fbo_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-    // Initialize preprocessing FBO
-    glGenFramebuffers(1, &m_preprocessFBO);
-    glBindFramebuffer(GL_FRAMEBUFFER, m_preprocessFBO);
-
-    // Create color texture
-    glGenTextures(1, &m_preprocessTexture);
-    glBindTexture(GL_TEXTURE_2D, m_preprocessTexture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
-                 size().width() * m_devicePixelRatio,
-                 size().height() * m_devicePixelRatio,
-                 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                           GL_TEXTURE_2D, m_preprocessTexture, 0);
-
-    // Create depth renderbuffer
-    glGenRenderbuffers(1, &m_preprocessDepthRBO);
-    glBindRenderbuffer(GL_RENDERBUFFER, m_preprocessDepthRBO);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24,
-                          size().width() * m_devicePixelRatio,
-                          size().height() * m_devicePixelRatio);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
-                              GL_RENDERBUFFER, m_preprocessDepthRBO);
-
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        std::cerr << "ERROR: Preprocessing framebuffer is not complete!" << std::endl;
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, bloomTex[i], 0);
+        glBindFramebuffer(GL_FRAMEBUFFER, defaultFBO);
+        glBindTexture(GL_TEXTURE_2D, 0);
     }
 
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    // godrays fbo
+    glGenTextures(1, &godraysTex);
+    glBindTexture(GL_TEXTURE_2D, godraysTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m_fbo_width, m_fbo_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    glGenFramebuffers(1, &godraysFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, godraysFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, godraysTex, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, defaultFBO);
+
+    // screen quad info
+    std::vector<GLfloat> fullscreen_quad_data =
+        { //     POSITIONS    //
+            -1.f,  1.f, 0.0f, 0,1.f,
+            -1.f, -1.f, 0.0f, 0,0,
+            1.f, -1.f, 0.0f, 1.f,0,
+            1.f,  1.f, 0.0f, 1.f,1.f,
+            -1.f,  1.f, 0.0f, 0,1.f,
+            1.f, -1.f, 0.0f, 1.f,0
+        };
+
+    glGenBuffers(1, &m_fullscreen_vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, m_fullscreen_vbo);
+    glBufferData(GL_ARRAY_BUFFER, fullscreen_quad_data.size()*sizeof(GLfloat), fullscreen_quad_data.data(), GL_STATIC_DRAW);
+    glGenVertexArrays(1, &m_fullscreen_vao);
+    glBindVertexArray(m_fullscreen_vao);
+
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), reinterpret_cast<void*>(0));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), reinterpret_cast<void*>(sizeof(GLfloat)*3));
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
 
     initializeTerrain();
 
@@ -291,42 +380,17 @@ void Realtime::initializeGL() {
 
     //TreeManager codes
     m_treeManager.initialize();
-    m_treeWindShader = ShaderLoader::createShaderProgram(
-        ":/resources/shaders/tree_wind.vert",
-        ":/resources/shaders/tree_wind.frag"
-        );
-
-    std::cout << "Tree wind shader ID: " << m_treeWindShader << std::endl;
-    checkProgramLinking(m_treeWindShader, "tree_wind shader");
-
-    // Check if uniforms are valid
-    m_treeWindUniforms.windTime = glGetUniformLocation(m_treeWindShader, "windTime");
-    std::cout << "windTime uniform location: " << m_treeWindUniforms.windTime << std::endl;
-
-    m_treeWindUniforms.model = glGetUniformLocation(m_treeWindShader, "model");
-    m_treeWindUniforms.view = glGetUniformLocation(m_treeWindShader, "view");
-    m_treeWindUniforms.model = glGetUniformLocation(m_treeWindShader, "model");
-    m_treeWindUniforms.view = glGetUniformLocation(m_treeWindShader, "view");
-    m_treeWindUniforms.proj = glGetUniformLocation(m_treeWindShader, "proj");
-    m_treeWindUniforms.normalMatrix = glGetUniformLocation(m_treeWindShader, "normalMatrix");
-    m_treeWindUniforms.windTime = glGetUniformLocation(m_treeWindShader, "windTime");
-    m_treeWindUniforms.windStrength = glGetUniformLocation(m_treeWindShader, "windStrength");
-    m_treeWindUniforms.windDirection = glGetUniformLocation(m_treeWindShader, "windDirection");
-    m_treeWindUniforms.cAmbient = glGetUniformLocation(m_treeWindShader, "cAmbient");
-    m_treeWindUniforms.cDiffuse = glGetUniformLocation(m_treeWindShader, "cDiffuse");
-    m_treeWindUniforms.cSpecular = glGetUniformLocation(m_treeWindShader, "cSpecular");
-    m_treeWindUniforms.shininess = glGetUniformLocation(m_treeWindShader, "shininess");
-    m_treeWindUniforms.lightDir = glGetUniformLocation(m_treeWindShader, "lightDir");
-    m_treeWindUniforms.cameraPos = glGetUniformLocation(m_treeWindShader, "cameraPos");
 
     //RockGenerator
     m_rockGenerator.initialize();
     m_bumpMapping.initialize();
 
     m_particles = nullptr;
-    m_showParticles = true;
+    m_showParticles = false;
 
     initializeBaseModel();
+
+    placeLanternOnTerrain(0,0, .05f);
 }
 
 void Realtime::cacheUniformLocations() {
@@ -575,6 +639,97 @@ void Realtime::placeObjectOnTerrain(float terrainX, float terrainY, PrimitiveTyp
     update();
 }
 
+void Realtime::placeLanternOnTerrain(float terrainX, float terrainY, float size) {
+    std::vector<float> vertexData = getVertexDataForType(PrimitiveType::PRIMITIVE_CUBE);
+
+    if (vertexData.empty()) {
+        std::cerr << "Error: Empty vertex data for object type lantern"<<std::endl;
+        return;
+    }
+
+    if (vertexData.size() == 0) {
+        std::cerr << "Error: No vertices for object type lantern"<< std::endl;
+        return;
+    }
+
+    terrainX = glm::clamp(terrainX, 0.0f, 1.0f);
+    terrainY = glm::clamp(terrainY, 0.0f, 1.0f);
+
+    float terrainHeight = m_terrain.getHeight(terrainX, terrainY);
+
+    TerrainObject obj;
+    obj.type = PrimitiveType::PRIMITIVE_CUBE;
+    obj.terrainPosition = glm::vec2(terrainX, terrainY);
+    obj.size = size;
+
+    // transformation matrix
+    glm::mat4 modelMatrix = glm::mat4(1.0f);
+    // modelMatrix = glm::translate(modelMatrix, glm::vec3(terrainX, terrainY, terrainHeight));
+    // modelMatrix = glm::translate(modelMatrix, glm::vec3(0.0f, 0.0f, size * 0.5f));
+
+    modelMatrix = glm::scale(modelMatrix, glm::vec3(size*0.00002));
+    obj.modelMatrix = modelMatrix;
+
+    obj.color = glm::vec4(1, 1, 1, 1.0f);
+    obj.isLantern = true;
+    obj.isFlag = false;
+    obj.isLSystem = false;
+    obj.isRock = false;
+
+    if (vertexData.empty()) {
+        std::cerr << "Failed to get vertex data for object type" << std::endl;
+        return;
+    }
+
+    // OpenGL buffers
+    GLuint vbo, vao;
+    glGenBuffers(1, &vbo);
+    glGenVertexArrays(1, &vao);
+
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, vertexData.size() * sizeof(GLfloat),
+                 vertexData.data(), GL_STATIC_DRAW);
+
+    glBindVertexArray(vao);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 6,
+                          reinterpret_cast<void *>(0));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 6,
+                          reinterpret_cast<void *>(sizeof(GLfloat)*3));
+
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+    if (vbo == 0 || vao == 0) {
+        std::cerr << "Error: Failed to create OpenGL buffers" << std::endl;
+        if (vbo != 0) glDeleteBuffers(1, &vbo);
+        if (vao != 0) glDeleteVertexArrays(1, &vao);
+        return;
+    }
+
+    obj.vbo = vbo;
+    obj.vao = vao;
+    obj.vertexCount = vertexData.size() / 6;
+
+    if (obj.vertexCount <= 0) {
+        std::cerr << "Error: Invalid vertex count: " << obj.vertexCount << std::endl;
+        glDeleteBuffers(1, &vbo);
+        glDeleteVertexArrays(1, &vao);
+        return;
+    }
+
+    m_terrainObjects.push_back(obj);
+
+    if (m_particles) {
+        glm::vec3 worldPos = glm::vec3(m_terrainWorldMatrix * glm::vec4(terrainX, terrainY, terrainHeight, 1.0f));
+        triggerParticleBurst(worldPos.x, worldPos.y, worldPos.z);
+    }
+
+
+    update();
+}
+
 std::vector<float> Realtime::getVertexDataForType(PrimitiveType type) {
     switch(type) {
     case PrimitiveType::PRIMITIVE_CUBE:
@@ -640,8 +795,9 @@ GLsizei Realtime::typeInterpretVertices(PrimitiveType type) {
     }
 }
 
+
 void Realtime::paintGL() {
-    // ========== RENDER TO PREPROCESSING FBO ==========
+    // ========== PREPROCESSING FBO WRAP ==========
     glBindFramebuffer(GL_FRAMEBUFFER, m_preprocessFBO);
     glViewport(0, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -673,13 +829,14 @@ void Realtime::paintGL() {
         glBindVertexArray(0);
     }
 
-    // Shadow pass for terrain objects (skip flags and rocks with Sarya's shaders)
+    // Shadow pass for terrain objects (skip flags and rocks with special shaders)
     for (const TerrainObject& obj : m_terrainObjects) {
         if (obj.isFlag || obj.isRock) continue;
 
         if (m_depthUniformLocs.model != -1) {
             glUniformMatrix4fv(m_depthUniformLocs.model, 1, GL_FALSE, &obj.modelMatrix[0][0]);
         }
+
 
         glBindVertexArray(obj.vao);
         glDrawArrays(GL_TRIANGLES, 0, obj.vertexCount);
@@ -697,12 +854,12 @@ void Realtime::paintGL() {
         glBindVertexArray(0);
     }
 
-    // ========== MAIN SCENE TO PREPROCESSING FBO ==========
+    // ========== MAIN SCENE RENDER ==========
     glBindFramebuffer(GL_FRAMEBUFFER, m_preprocessFBO);
     glViewport(0, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    // ========== SKYBOX RENDER ==========
+    // ========== SKYBOX RENDERING ==========
     glDepthMask(GL_FALSE);
 
     if (m_showTerrain) {
@@ -723,7 +880,7 @@ void Realtime::paintGL() {
 
     glDepthMask(GL_TRUE);
 
-    // ========== TERRAIN ==========
+    // ========== TERRAIN RENDERING ==========
     if (m_showTerrain) {
         glEnable(GL_DEPTH_TEST);
 
@@ -742,11 +899,11 @@ void Realtime::paintGL() {
         m_terrainProgram->release();
     }
 
-    // ========== BASE MODEL ==========
+    // ========== BASE MODEL RENDERING (UNDER TERRAIN) ==========
     if (m_baseModel_data.size() > 0) {
-        glDisable(GL_CULL_FACE);
         glUseProgram(m_shader);
 
+        // Convert terrain camera matrices
         glm::mat4 terrainViewMatrix = glm::mat4(1.0f);
         glm::mat4 terrainProjMatrix = glm::mat4(1.0f);
 
@@ -757,6 +914,7 @@ void Realtime::paintGL() {
             }
         }
 
+        // Set uniforms
         if (m_uniformLocs.view != -1) glUniformMatrix4fv(m_uniformLocs.view, 1, GL_FALSE, &terrainViewMatrix[0][0]);
         if (m_uniformLocs.projection != -1) glUniformMatrix4fv(m_uniformLocs.projection, 1, GL_FALSE, &terrainProjMatrix[0][0]);
         if (m_uniformLocs.lightSpaceMatrix != -1) glUniformMatrix4fv(m_uniformLocs.lightSpaceMatrix, 1, GL_FALSE, &m_lightSpaceMatrix[0][0]);
@@ -778,6 +936,7 @@ void Realtime::paintGL() {
         glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(fullModelMatrix)));
         if (m_uniformLocs.ictm != -1) glUniformMatrix3fv(m_uniformLocs.ictm, 1, GL_FALSE, &normalMatrix[0][0]);
 
+        // Set base model color (brown/rocky)
         glm::vec4 baseColor = glm::vec4(0.4f, 0.3f, 0.2f, 1.0f);
         if (m_uniformLocs.cAmbient != -1) glUniform4fv(m_uniformLocs.cAmbient, 1, &baseColor[0]);
         if (m_uniformLocs.cDiffuse != -1) glUniform4fv(m_uniformLocs.cDiffuse, 1, &baseColor[0]);
@@ -791,7 +950,7 @@ void Realtime::paintGL() {
         glBindVertexArray(0);
     }
 
-    // ========== REGULAR TERRAIN OBJECTS ==========
+    // ========== REGULAR TERRAIN OBJECTS RENDERING ==========
     glUseProgram(m_shader);
 
     glm::mat4 terrainViewMatrix = glm::mat4(1.0f);
@@ -825,11 +984,56 @@ void Realtime::paintGL() {
         glUniform1i(m_uniformLocs.shadowMap, 0);
     }
 
+    glUseProgram(m_shader);
+
+    for (RenderShapeData shape : renderData.shapes) {
+        glBindVertexArray(typeInterpretVao(shape.primitive.type));
+
+        m_mvp = m_proj * m_view * shape.ctm;
+        GLint mvpLoc = glGetUniformLocation(m_shader, "m_mvp");
+        glUniformMatrix4fv(mvpLoc, 1, GL_FALSE, &m_mvp[0][0]);
+
+        m_model = shape.ctm;
+        GLint model_location = glGetUniformLocation(m_shader, "m_model");
+        glUniformMatrix4fv(model_location, 1, GL_FALSE, &m_model[0][0]);
+
+        ictm = shape.ictm;
+        GLint ictmLoc = glGetUniformLocation(m_shader, "ictm");
+        glUniformMatrix3fv(ictmLoc, 1, GL_FALSE, &ictm[0][0]);
+
+        GLint cameraPosLoc = glGetUniformLocation(m_shader, "camera_pos");
+        glUniform4fv(cameraPosLoc, 1, &camPos[0]);
+
+        GLint ka_location = glGetUniformLocation(m_shader, "m_ka");
+        glUniform1f(ka_location, renderData.globalData.ka);
+        GLint kd_location = glGetUniformLocation(m_shader, "m_kd");
+        glUniform1f(kd_location, m_kd);
+        GLint ks_location = glGetUniformLocation(m_shader, "m_ks");
+        glUniform1f(ks_location, m_ks);
+
+        SceneMaterial material = shape.primitive.material;
+        GLint cAmbient_location = glGetUniformLocation(m_shader, "m_cAmbient");
+        glUniform4f(cAmbient_location, material.cAmbient.x, material.cAmbient.y, material.cAmbient.z, material.cAmbient.w);
+        GLint cDiffuse_location = glGetUniformLocation(m_shader, "m_cDiffuse");
+        glUniform4f(cDiffuse_location, material.cDiffuse.x, material.cDiffuse.y, material.cDiffuse.z, material.cDiffuse.w);
+        GLint cSpecular_location = glGetUniformLocation(m_shader, "m_cSpecular");
+        glUniform4f(cSpecular_location, material.cSpecular.x, material.cSpecular.y, material.cSpecular.z, material.cSpecular.w);
+        GLint shininess_location = glGetUniformLocation(m_shader, "m_shininess");
+        glUniform1f(shininess_location, material.shininess);
+        GLint cReflectivelocation = glGetUniformLocation(m_shader, "m_cReflective");
+        glUniform4f(cReflectivelocation, material.cReflective.x, material.cReflective.y, material.cReflective.z, material.cReflective.w);
+
+        glDrawArrays(GL_TRIANGLES, 0, typeInterpretVertices(shape.primitive.type));
+        glBindVertexArray(0);
+    }
+
+    glUseProgram(0);
+
+
+
     // Render regular terrain objects (not rocks or flags)
     for (const TerrainObject& obj : m_terrainObjects) {
-        if (obj.isRock) continue; //Skipping if rock
-        if (obj.isFlag) continue; //Skipping if flag
-        if (obj.isLSystem) continue; //Skipping trees
+        if (obj.isRock || obj.isFlag) continue;
 
         glBindVertexArray(obj.vao);
 
@@ -843,8 +1047,10 @@ void Realtime::paintGL() {
         glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(fullModelMatrix)));
         if (m_uniformLocs.ictm != -1) glUniformMatrix3fv(m_uniformLocs.ictm, 1, GL_FALSE, &normalMatrix[0][0]);
 
-        glm::vec4 amb = glm::vec4(1.6f,1.6f,1.6f,1.0f);
-        if (m_uniformLocs.cAmbient != -1) glUniform4fv(m_uniformLocs.cAmbient, 1, &amb[0]);
+        glm::vec4 amb(1.6,1.6,1.6,1);
+        if (obj.isLantern) glUniform4fv(m_uniformLocs.cAmbient, 1, &amb[0]);
+        else { if (m_uniformLocs.cAmbient != -1) glUniform4fv(m_uniformLocs.cAmbient, 1, &obj.color[0]);}
+
         if (m_uniformLocs.cDiffuse != -1) glUniform4fv(m_uniformLocs.cDiffuse, 1, &obj.color[0]);
         if (m_uniformLocs.cSpecular != -1) glUniform4f(m_uniformLocs.cSpecular, 0.5f, 0.5f, 0.5f, 1.0f);
         if (m_uniformLocs.shininess != -1) glUniform1f(m_uniformLocs.shininess, 32.0f);
@@ -855,7 +1061,7 @@ void Realtime::paintGL() {
     }
 
     // ========== FLAG RENDERING ==========
-    glDisable(GL_CULL_FACE);
+    glDisable(GL_CULL_FACE);  // Flags need to be visible from both sides
 
     for (const TerrainObject& obj : m_terrainObjects) {
         if (!obj.isFlag || !obj.flagSimulation) continue;
@@ -870,6 +1076,7 @@ void Realtime::paintGL() {
         glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(fullModelMatrix)));
         if (m_uniformLocs.ictm != -1) glUniformMatrix3fv(m_uniformLocs.ictm, 1, GL_FALSE, &normalMatrix[0][0]);
 
+        // Render pole with brown color
         glm::vec4 poleColor = glm::vec4(0.6f, 0.4f, 0.2f, 1.0f);
         if (m_uniformLocs.cAmbient != -1) glUniform4fv(m_uniformLocs.cAmbient, 1, &poleColor[0]);
         if (m_uniformLocs.cDiffuse != -1) glUniform4fv(m_uniformLocs.cDiffuse, 1, &poleColor[0]);
@@ -878,6 +1085,7 @@ void Realtime::paintGL() {
 
         obj.flagSimulation->renderPole();
 
+        // Render flag cloth with flag color
         if (m_uniformLocs.cAmbient != -1) glUniform4fv(m_uniformLocs.cAmbient, 1, &obj.color[0]);
         if (m_uniformLocs.cDiffuse != -1) glUniform4fv(m_uniformLocs.cDiffuse, 1, &obj.color[0]);
         if (m_uniformLocs.cSpecular != -1) glUniform4f(m_uniformLocs.cSpecular, 0.5f, 0.5f, 0.5f, 1.0f);
@@ -891,6 +1099,7 @@ void Realtime::paintGL() {
     // ========== ROCK RENDERING WITH BUMP MAPPING ==========
     if (m_bumpMapping.isInitialized()) {
         GLuint bumpShader = m_bumpMapping.getShader();
+
 
         if (bumpShader != 0) {
             glUseProgram(bumpShader);
@@ -937,14 +1146,13 @@ void Realtime::paintGL() {
             }
         }
     }
-    renderLSystems(terrainViewMatrix, terrainProjMatrix);
 
-    // ========== PARTICLES ==========
     if (m_showParticles && m_particles) {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glDepthMask(GL_FALSE);
 
+        // Convert terrain matrices to glm::mat4
         glm::mat4 terrainViewMatrix = glm::mat4(1.0f);
         glm::mat4 terrainProjMatrix = glm::mat4(1.0f);
 
@@ -962,31 +1170,117 @@ void Realtime::paintGL() {
         glDisable(GL_BLEND);
     }
 
-    // ========== COPY PREPROCESSING FBO TO DEFAULT FRAMEBUFFER ==========
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, m_preprocessFBO);
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, defaultFramebufferObject());
-    glBlitFramebuffer(
-        0, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio,
-        0, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio,
-        GL_COLOR_BUFFER_BIT, GL_NEAREST
-        );
 
-    // Restore state
-    glBindFramebuffer(GL_FRAMEBUFFER, defaultFramebufferObject());
+    // // BLOOM PASS
+    bool horizontal = true;
+    bool first = true;
+    int amount = 10;
+    glUseProgram(bloomShader);
+    for (int i = 0; i < amount; i++) {
+        glBindFramebuffer(GL_FRAMEBUFFER, bloomFBO[horizontal]);
+
+        glUniform1i(glGetUniformLocation(bloomShader, "horizontal"), horizontal);
+        glBindVertexArray(m_fullscreen_vao);
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, first ? hdrTex : bloomTex[!horizontal]);
+        glUniform1i(glGetUniformLocation(bloomShader, "image"), 0);
+
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+
+        horizontal = !horizontal;
+        if (first) {
+            first = false;
+        }
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+
+    // // GODRAYS PASS
+    glBindFramebuffer(GL_FRAMEBUFFER, godraysFBO);
+
+    glViewport(0, 0, size().width()*m_devicePixelRatio,size().height()*m_devicePixelRatio);
+    glUseProgram(godraysShader);
+    glBindVertexArray(m_fullscreen_vao);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, m_preprocessTexture);
+    glUniform1i(glGetUniformLocation(godraysShader, "sceneTex"), 0);
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, occTex);
+    glUniform1i(glGetUniformLocation(godraysShader, "occTex"), 1);
+
+    // TODO: when parsing, set m_lightPos only if a godray flag is true
+    glm::vec4 clip = m_proj * m_view * godrayLightPos;
+    glm::vec3 ndc = glm::vec3(clip) / clip.w;
+    glm::vec2 screen = (glm::vec2(ndc) * 0.5f) + 0.5f;
+    glUniform2f(glGetUniformLocation(godraysShader,"lightScreenPos"), screen.x, screen.y);
+    glUniform1f(glGetUniformLocation(godraysShader,"exposure"), 0.03f);
+    glUniform1f(glGetUniformLocation(godraysShader,"decay"), 0.95f);
+    glUniform1f(glGetUniformLocation(godraysShader,"density"), 1.2f);
+    glUniform1f(glGetUniformLocation(godraysShader,"weight"), .75f);
+    glUniform1i(glGetUniformLocation(godraysShader,"NUM_SAMPLES"), 200);
+
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, defaultFBO);
+    glUseProgram(fogShader);
+    glBindVertexArray(m_fullscreen_vao);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, m_preprocessTexture);
+    glUniform1i(glGetUniformLocation(fogShader, "scene"), 0);
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, depthTex);
+    glUniform1i(glGetUniformLocation(fogShader, "depth"), 1);
+
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, bloomTex[!horizontal]);
+    glUniform1i(glGetUniformLocation(fogShader, "bloom"), 2);
+
+    glActiveTexture(GL_TEXTURE3);
+    glBindTexture(GL_TEXTURE_2D, godraysTex);
+    glUniform1i(glGetUniformLocation(fogShader, "godrays"), 3);
+
+    glUniform1f(glGetUniformLocation(fogShader, "near"), nearFog);
+    glUniform1f(glGetUniformLocation(fogShader, "far"), farFog);
+
+
+    // glBindFramebuffer(GL_FRAMEBUFFER, defaultFBO);
+    // glUseProgram(fogShader);
+    // glBindVertexArray(m_fullscreen_vao);
+    // glActiveTexture(GL_TEXTURE0);
+    // glBindTexture(GL_TEXTURE_2D, m_preprocessTexture);
+    // glUniform1i(glGetUniformLocation(fogShader, "scene"), 0);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+
+    // //copy to default
+    // glBindFramebuffer(GL_DRAW_FRAMEBUFFER, defaultFramebufferObject());
+    // glBlitFramebuffer(
+    //     1, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio,
+    //     0, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio,
+    //     GL_COLOR_BUFFER_BIT, GL_NEAREST
+    //     );
+
+    // // restore
+    // glBindFramebuffer(GL_FRAMEBUFFER, defaultFramebufferObject());
     glUseProgram(0);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 
 void Realtime::resizeGL(int w, int h) {
-    glBindTexture(GL_TEXTURE_2D, m_preprocessTexture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
-                 w * m_devicePixelRatio, h * m_devicePixelRatio,
-                 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    // glBindTexture(GL_TEXTURE_2D, m_preprocessTexture);
+    // glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
+    //              w * m_devicePixelRatio, h * m_devicePixelRatio,
+    //              0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 
-    glBindRenderbuffer(GL_RENDERBUFFER, m_preprocessDepthRBO);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24,
-                          w * m_devicePixelRatio, h * m_devicePixelRatio);
+    // glBindRenderbuffer(GL_RENDERBUFFER, m_preprocessDepthRBO);
+    // glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24,
+    //                       w * m_devicePixelRatio, h * m_devicePixelRatio);
+    glViewport(0, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio);
+
 }
 
 void Realtime::updateCamera() {
@@ -1068,6 +1362,10 @@ void Realtime::settingsChanged() {
         m_placeObjectMode = true;
         m_placementMode = PlacementMode::LSYSTEM;
     }
+    if (settings.lightMode) {
+        m_placeObjectMode = true;
+        m_placementMode = PlacementMode::LANTERN;
+    }
     update();
 }
 
@@ -1100,10 +1398,10 @@ void Realtime::keyPressEvent(QKeyEvent *event) {
     }
 
     // Switch to L-SYSTEM mode
-    if (event->key() == Qt::Key_L) {
-        m_placementMode = PlacementMode::LSYSTEM;
-        std::cout << "l-system type" << std::endl;
-    }
+    // if (event->key() == Qt::Key_L) {
+    //     m_placementMode = PlacementMode::LSYSTEM;
+    //     std::cout << "l-system type" << std::endl;
+    // }
 
     //Switch to rock generation
     if (event->key() == Qt::Key_R) {
@@ -1212,6 +1510,8 @@ void Realtime::mousePressEvent(QMouseEvent *event) {
                     placeRockOnTerrain(m_hitPoint.x, m_hitPoint.y, 0.03f);
                 } else if (m_placementMode == PlacementMode::FLAG) {
                     placeFlagOnTerrain(m_hitPoint.x, m_hitPoint.y, 0.05f);
+                } else if (m_placementMode == PlacementMode::LANTERN) {
+                    placeLanternOnTerrain(m_hitPoint.x, m_hitPoint.y, 0.05f);
                 }
             }
             // Terrain raking mode
@@ -1379,7 +1679,7 @@ void Realtime::timerEvent(QTimerEvent *event) {
 
     //tree animation
     m_treeManager.updateWind(0.016f);
-    std::cout << "Wind time: " << m_treeManager.getWindTime() << std::endl;
+    // std::cout << "Wind time: " << m_treeManager.getWindTime() << std::endl;
 
     //Timer growth
     bool needsUpdate = false;

@@ -69,6 +69,7 @@ public:
 
         //flag
         bool isFlag;
+        bool isLantern;
         Flag* flagSimulation;
     };
 
@@ -77,6 +78,8 @@ public:
     // Place an object on the terrain at given coordinates
     // SARYA: probably where the most changes will be
     void placeObjectOnTerrain(float terrainX, float terrainY, PrimitiveType type, float size = 0.05f);
+    void placeLanternOnTerrain(float terrainX, float terrainY, float size = 0.05f);
+
 
     // Clear all terrain objects
     void clearTerrainObjects();
@@ -122,7 +125,8 @@ private:
         PRIMITIVE,
         LSYSTEM,
         ROCK,
-        FLAG
+        FLAG,
+        LANTERN
     };
     PlacementMode m_placementMode = PlacementMode::PRIMITIVE;
 
@@ -336,6 +340,6 @@ private:
 
     GLuint bloomShader, godraysShader, fogShader;
     glm::vec4 godrayLightPos;
-    float nearFog = 5.f;
-    float farFog = 25.f;
+    float nearFog = 0.f;
+    float farFog = 50.f;
 };
